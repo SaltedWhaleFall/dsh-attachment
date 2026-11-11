@@ -1,0 +1,8 @@
+node_modules/
+*.log
+.DS_Store
+*.tmp
+# 本地状态与配置，不进仓库
+dsh-attachment.json
+dsh-attachment-config.json
+dsh-sex.json

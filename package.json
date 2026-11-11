@@ -1,0 +1,58 @@
+{
+  "name": "dsh-attachment",
+  "version": "1.0.0",
+  "description": "DSH 依恋插件：唤起、性欲、爱慕、依恋、好奇、余韵、羞耻、信任八个维度，按轮次衰减；关系分见/碰/解/合/尽五段，注入「想不想、敢不敢、要不要」。带设置页、和谐模式、多人分开记与伴侣模式。",
+  "type": "module",
+  "main": "index.js",
+  "icon": "./icon.svg",
+  "files": [
+    "index.js",
+    "core.js",
+    "prompts.js",
+    "store.js",
+    "client.js",
+    "test.mjs",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "BREAKOUT.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./core": "./core.js",
+    "./prompts": "./prompts.js",
+    "./store": "./store.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "deepseek-harness",
+    "desire",
+    "intimacy",
+    "persona",
+    "prompt",
+    "情欲"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
