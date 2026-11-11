@@ -1027,6 +1027,40 @@ section('三层开关各管什么')
   S.cfg = savedCfg
 }
 
+// ── 冷启动回放 ──────────────────────────────────────────────────────
+{
+  const S = MOD._internal
+  const savedRoot = S.root
+  const savedCfg = S.cfg
+  S.root = STORE.blankRoot()
+  S.cfg = STORE.normalizeConfig({})
+  const evS = events[0].fn
+  const HOUR = 3600e3
+  const now = Date.now()
+  const sess = {
+    id: 'sess-seed',
+    snapshotEvents: () => ([
+      { type: 'user/message', at: now - 3 * HOUR, data: { text: '今天好累' } },
+      { type: 'assistant/message', at: now - 3 * HOUR + 1000, data: { text: '那先歇会儿' } },
+      { type: 'user/message', at: now - 2 * HOUR, data: { text: '我想要你' } },
+      { type: 'user/message', at: now, data: { text: '你在吗' } },
+    ]),
+  }
+  evS(sess, { type: 'user/message', at: now, data: { text: '你在吗' } })
+  eq(S.root.partners.self.msgCount, 3, '冷启动回放：历史两条 + 当前一条')
+
+  evS(sess, { type: 'user/message', at: now + 1, data: { text: '在吗' } })
+  eq(S.root.partners.self.msgCount, 4, '同一个会话只回放一次')
+
+  const sess2 = { id: 'sess-seed-2', snapshotEvents: () => ([{ type: 'user/message', at: now, data: { text: '停' } }]) }
+  S.root.partners.self.msgCount = 10
+  evS(sess2, { type: 'user/message', at: now + 2, data: { text: '抱一下' } })
+  eq(S.root.partners.self.msgCount, 11, '已有记录时不回放，只算当前这条')
+
+  S.root = savedRoot
+  S.cfg = savedCfg
+}
+
 // ── 收尾 ────────────────────────────────────────────────────────────
 rmSync(TMP, { recursive: true, force: true })
 console.log('\n' + (fail === 0 ? '— 自检全过' : '— 失败 ' + fail + ' 项') + '：' + pass + ' 过 / ' + fail + ' 失败')

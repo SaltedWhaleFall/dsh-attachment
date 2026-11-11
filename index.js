@@ -172,6 +172,53 @@ function textOf(d) {
   return ''
 }
 
+// ── 冷启动：把已经发生过的话回放一遍 ──────────────────────────────────
+
+/**
+ * 第一次加载（这个人的记录还是空的）时，不让他从零开始。
+ *
+ * 装插件之前聊过的那二十轮，在插件眼里不该是陌生人 —— 否则第一句注入就是
+ * 「刚认识」，而对面已经在这里待了很久。所以把当前会话里已经有的话按真实
+ * 时间戳回放一遍：逐句走 applyUserMessage，衰减按当时的时间算，得到的是
+ * 「这段关系走到现在」的样子，不是「装完插件那一刻」的样子。
+ *
+ * 三点克制：
+ * - 只回放最近 SEED_MAX 条，再久的对当下的判断没有增量；
+ * - 回放产生的 flags 一律清掉 —— 那是给下一轮注入的一次性插条，不该由历史触发；
+ * - 只在这个会话第一次出现「他说的话」时做一次，之后靠 msgCount 判断，不再回放。
+ */
+const SEED_MAX = 200
+
+function seedFromHistory(session) {
+  try {
+    if (!session || typeof session.snapshotEvents !== 'function') return 0
+    const all = session.snapshotEvents() || []
+    if (!all.length) return 0
+    // 最后一条是刚进来的这句 —— 下面还要正常处理，回放时跳过，免得算两遍。
+    const end = Math.max(0, all.length - 1)
+    const start = Math.max(0, end - SEED_MAX)
+    let n = 0
+    for (let i = start; i < end; i++) {
+      const ev = all[i]
+      if (!ev || ev.type !== 'user/message') continue
+      const text = textOf(ev.data)
+      if (!text || isInjected(text)) continue
+      const at = Number(ev.at || ev.ts || 0) || Date.now()
+      for (const part of splitUtterances(text)) {
+        const k = eventKey(session, part.name)
+        const q = partnerOf(root, k, labelOf(session, k))
+        CORE.applyUserMessage(q, part.text, at, cfg)
+        q.msgCount = (Number(q.msgCount) || 0) + 1
+        q.flags = {}
+        n++
+      }
+    }
+    return n
+  } catch {
+    return 0
+  }
+}
+
 // ── 主挂载 ───────────────────────────────────────────────────────────
 
 const mountCore = (ctx) => {
@@ -258,6 +305,18 @@ const mountCore = (ctx) => {
           return
         }
         if (isInjected(text)) return
+
+        // 冷启动：这个会话第一次听到他说话，而这块状态还空着 → 把历史回放一遍。
+        if (!root._seedTried) root._seedTried = {}
+        const seedKey = eventKey(session, '')
+        if (!root._seedTried[seedKey]) {
+          root._seedTried[seedKey] = true
+          const pSeed = partnerOf(root, seedKey, labelOf(session, seedKey))
+          if (!(Number(pSeed.msgCount) || 0)) {
+            const seeded = seedFromHistory(session)
+            if (seeded > 0) maybeSave(true)
+          }
+        }
 
         /**
          * 一条消息可能要拆。

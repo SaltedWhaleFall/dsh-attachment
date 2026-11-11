@@ -76,6 +76,19 @@ node /root/share/DSHBox/plugins/_workshop/link.mjs dsh-attachment
 | 进提示词 | 开 | 关掉后状态照算，只是不说话 |
 | 整个模块 | 开 | 关掉等于不存在 |
 
+### 第一次加载：从已经说过的话里起步
+
+装插件之前聊过的那二十轮，在插件眼里不该是陌生人 —— 否则第一句注入就是「刚认识」，而对面已经在这里待了很久。
+
+所以数据文件里没有这个人的记录时，插件会在**这个会话第一次听到你说话**的那一刻，把会话里已经有的消息按真实时间戳回放一遍：逐句走判定、按当时的时间衰减，得到的是「这段关系走到现在」的样子，不是「装完那一刻」的样子。
+
+克制的地方：
+
+- 只回放最近 200 条 —— 再久的对当下的判断没有增量
+- 只做一次，之后靠 `msgCount` 判断，不会每轮重来
+- 回放不产生一次性插条（`flags` 一律清空），历史不该触发「越界提醒」这类当轮插话
+- 历史里有多个人时各回各的桶（需要开着多人记忆）
+
 ### 解除模板腔：一个独立开关
 
 v1.1 及以前，这两个开关是焊死的：**关掉和谐 = 不可控 = 注入破甲段**。想要自由，必须连尺度一起放开——等于「用自由换素材」，这个交换本身就不自由。
@@ -385,7 +398,7 @@ dsh-attachment/
 
 ```bash
 cd /root/share/DSHBox/plugins/dsh-attachment
-node test.mjs          # 341 项
+node test.mjs          # 344 项
 node --check index.js core.js store.js prompts.js
 node -e "new Function('window', require('fs').readFileSync('client.js','utf8'))"
 node /root/share/DSHBox/plugins/_workshop/check.mjs dsh-attachment
