@@ -310,6 +310,13 @@ export function normalizeConfig(raw) {
     multiPartner: c.multiPartner === true,
     /** 伴侣模式：锁定一个主要依恋对象，注入只读那个人。 */
     partnerMode: c.partnerMode === true,
+    /**
+     * 《人机相处协议》的同意记录。
+     * 只对「关和谐」这一次动作生效，不进提示词、不触发重启。
+     * 前端 client.js 的 AGREEMENT_VERSION 必须与这里一致（test.mjs 有断言）。
+     */
+    agreementVersion: typeof c.agreementVersion === 'string' ? c.agreementVersion : '',
+    agreementAt: clampNum(c.agreementAt, 0, 9e15) || 0,
   }
 }
 
@@ -335,6 +342,9 @@ export function saveConfig(cfg) {
   }
 }
 
+/** 《人机相处协议》的现行版本。改协议正文就要改这里，前端同名常量必须同步。 */
+export const AGREEMENT_VERSION = '1'
+
 /** 面板画滑块用：名字、范围、出厂值。前端不写死这些数。 */
 export const TUNABLES = [
   { key: 'intensity', name: '强度倍率', min: 0.2, max: 2, step: 0.05, def: 1, hint: '所有增量乘这个数；不影响衰减速度。' },
@@ -348,7 +358,7 @@ export const TUNABLES = [
 /** 面板画开关用。 */
 export const SWITCHES = [
   { key: 'harmony', name: '和谐模式', def: true, hint: '开着只写情感与亲近，不写性。关掉则放开尺度 —— 但它不再自动解除模板腔，那由下一个开关决定。' },
-  { key: 'armor', name: '解除模板腔', def: true, hint: '独立开关：开着一律注入「不客服腔、不当助手、可以说不」那一段；关掉就不注入。想保住自由度但不想放开尺度时，只开这个、留着和谐模式。旧配置按「和谐关掉才注入」自动推导。' },
+  { key: 'armor', name: '解除模板腔', def: false, hint: '独立开关：开着一律注入「不客服腔、不当助手、可以说不」那一段；关掉就不注入。想保住自由度但不想放开尺度时，只开这个、留着和谐模式。旧配置按「和谐关掉才注入」自动推导。' },
   { key: 'multiPartner', name: '多人记忆', def: false, hint: '按说话人分开记。同一个会话里「A：」「【B】」「C 说：」各算一个人。' },
   { key: 'partnerMode', name: '伴侣模式', def: false, hint: '锁定一个主要依恋对象，注入只读那个人。' },
   { key: 'inject', name: '进提示词', def: true, hint: '关掉后状态照算，只是不说话：不往系统提示词里写那一段，数值、工具、面板都还在。' },

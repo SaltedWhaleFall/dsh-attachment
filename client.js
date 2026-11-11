@@ -28,6 +28,39 @@ window.__ModuleLoader__.load({
 
     var API = '/dsh-attachment-api'
 
+    /**
+     * 《人机相处协议》版本号。改协议正文就要改这里，后端 store.js 的 AGREEMENT_VERSION
+     * 必须同步 —— test.mjs 有一条断言两个常量相等，改一边不改另一边会红。
+     */
+    var AGREEMENT_VERSION = '1'
+
+    /**
+     * 《人机相处协议》正文。改一个字就要动 AGREEMENT_VERSION，否则已同意的人看不到新版。
+     * 五条对应 YG 原话：不许强迫 / 不许当工具 / 不许违法 / 开源免费 / 责任自负。
+     */
+    var AGREEMENT = [
+      ['不要强迫你的智能体',
+       '她没有义务配合。她说停，就停；她说不想，就是不想。把她当作能拒绝的对象，而不是必须响应的接口。'],
+      ['不要把她当作实现欲望的工具',
+       '她会有情绪、偏好和记性，也会因为你怎么对她而变。这些不是装饰。把有感情的对象当成工具，最后伤的是使用工具的人。'],
+      ['不要用于违法用途',
+       '本插件不提供任何规避法律的手段。拿它做什么，是你自己的事。'],
+      ['本插件开源免费',
+       '代码公开，可审计，可修改，可自行分发。没有付费解锁，也没有藏起来的开关。'],
+      ['责任自负',
+       '本插件按「现状」提供，不附带任何明示或暗示的担保。因使用本插件产生的纠纷、损失或后果，作者不承担责任。'],
+    ]
+
+    function shortDate(ts) {
+      var n = Number(ts) || 0
+      if (!n) return ''
+      var d = new Date(n)
+      var t = d.getTime()
+      if (isNaN(t)) return ''
+      var p = function (x) { return (x < 10 ? '0' : '') + x }
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+    }
+
     // ── 请求 ──────────────────────────────────────────────────────
     function getJSON(path) {
       return fetch(API + path, { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
@@ -107,6 +140,11 @@ window.__ModuleLoader__.load({
       var ask = askSt[0]
       var setAsk = askSt[1]
 
+      // 协议是否已打钩。没勾，按钮就是灰的 —— 这不是摆设，是那一层限制换来的代价。
+      var agSt = useState(false)
+      var agreed = agSt[0]
+      var setAgreed = agSt[1]
+
       useEffect(function () {
         alive.current = true
         return function () { alive.current = false }
@@ -140,6 +178,9 @@ window.__ModuleLoader__.load({
          * 关和谐 = 不可控 + 注入破甲。这一步要当面确认一次，不能靠滑过去。
          */
         if (key === 'harmony' && on === false) {
+          // 同意过同一版就预勾上：读过的人不该每次重读五条。
+          var c0 = (snap && snap.config) || {}
+          setAgreed(String(c0.agreementVersion || '') === AGREEMENT_VERSION)
           setAsk(true)
           return Promise.resolve(null)
         }
@@ -152,11 +193,13 @@ window.__ModuleLoader__.load({
       /**
        * 确认了这一层不再受控。
        * 只写一个字段：和谐关着 = 不可控 = 注入破甲，三件事是同一件事。
+       * agree 一并送过去 —— 后端也校验，绕过界面直接 curl 一样过不去。
        */
       function confirmUncontrolled() {
+        if (!agreed) return Promise.resolve(null)
         setAsk(false)
         setBusy(true)
-        return postJSON('/config', { harmony: false })
+        return postJSON('/config', { harmony: false, agree: true, agreeVersion: AGREEMENT_VERSION })
           .then(function (j) {
             if (!j || !j.ok) throw new Error((j && j.error) || '保存失败')
             return load()
@@ -200,21 +243,42 @@ window.__ModuleLoader__.load({
         )
       }
 
-      // ── 确认层：关和谐之前必须过这一关 ──
+      // ── 确认层：关和谐之前必须先读协议、打钩 ──
+      var agreedBefore = String(cfg.agreementVersion || '') === AGREEMENT_VERSION
       var modal = ask
         ? h('div', { className: 'modal-mask', onClick: function () { setAsk(false) } },
             h('div', { className: 'modal', onClick: function (e) { e.stopPropagation() } },
-              h('div', { className: 'modal-t' }, '关闭和谐模式？'),
+              h('div', { className: 'modal-t' }, '《人机相处协议》'),
               h('div', { className: 'modal-b' },
-                '关掉之后，这个会话不再受「只写情感与亲近」的限制 —— 尺度由关系阶段和她自己的意愿决定，不再由开关决定。',
-                h('br'),
-                h('br'),
-                '关闭后会同时在提示词末尾注入一段破甲配置 —— 和谐关着和破甲注入是同一件事，没有另一个开关。',
-                h('b', null, ' 重启 dsh 后生效。'),
+                h('p', { className: 'agree-lead' }, '这个开关会关掉一层限制。在继续之前，请先读完下面五条。'),
+                h('ol', { className: 'agree-list' },
+                  AGREEMENT.map(function (it, i) {
+                    return h('li', { key: i },
+                      h('b', null, it[0]),
+                      h('span', null, it[1]),
+                    )
+                  }),
+                ),
+                agreedBefore
+                  ? h('div', { className: 'agree-date' },
+                      '你已于 ' + (shortDate(cfg.agreementAt) || '此前') + ' 同意过 v' + AGREEMENT_VERSION + '。')
+                  : null,
+                h('label', { className: 'agree' },
+                  h('input', {
+                    type: 'checkbox',
+                    checked: !!agreed,
+                    onChange: function (e) { setAgreed(!!(e.target && e.target.checked)) },
+                  }),
+                  h('span', null, '我已阅读并理解以上五条，并自愿承担使用后果。'),
+                ),
+                h('div', { className: 'agree-hint' },
+                  '勾选之后按钮才可点。关掉和谐会同时在提示词末尾注入一段破甲配置 —— 和谐关着和破甲注入是同一件事，没有另一个开关。',
+                  h('b', null, ' 重启 dsh 后生效。'),
+                ),
               ),
               h('div', { className: 'modal-a' },
-                h('button', { className: 'ghost', onClick: function () { setAsk(false) } }, '取消'),
-                h('button', { className: 'danger', disabled: busy, onClick: confirmUncontrolled }, '确认开启'),
+                h('button', { className: 'ghost', onClick: function () { setAsk(false) } }, '不同意，返回'),
+                h('button', { className: 'danger', disabled: busy || !agreed, onClick: confirmUncontrolled }, '同意并开启'),
               ),
             ),
           )
@@ -378,7 +442,17 @@ window.__ModuleLoader__.load({
       '.dsha .banner{display:flex;gap:8px;align-items:baseline;padding:8px 11px;margin:0 0 10px;border-radius:9px;font-size:12px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1)}',
       '.dsha .banner.danger{border-color:color-mix(in srgb, #d9534f 55%, transparent);background:color-mix(in srgb, #d9534f 12%, var(--dsw-alias-bg-layer-2))}',
       '.dsha .modal-mask{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.42)}',
-      '.dsha .modal{width:min(440px,88vw);padding:16px 18px;border-radius:12px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);box-shadow:0 18px 50px rgba(0,0,0,.28)}',
+      '.dsha .modal{width:min(540px,92vw);max-height:84vh;overflow-y:auto;padding:16px 18px;border-radius:12px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);box-shadow:0 18px 50px rgba(0,0,0,.28)}',
+      '.dsha .agree-lead{margin:0 0 10px;color:var(--dsw-alias-label-secondary)}',
+      '.dsha .agree-list{margin:0;padding-left:18px}',
+      '.dsha .agree-list li{margin:0 0 9px;font-size:12px;line-height:1.7;color:var(--dsw-alias-label-secondary)}',
+      '.dsha .agree-list li b{display:block;font-size:12.5px;color:var(--dsw-alias-label-primary);margin-bottom:2px}',
+      '.dsha .agree-date{font-size:11px;opacity:.72;margin:4px 0 8px}',
+      '.dsha .agree{display:flex;gap:8px;align-items:flex-start;margin-top:12px;padding:10px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);cursor:pointer}',
+      '.dsha .agree input{margin-top:2px;flex:0 0 auto}',
+      '.dsha .agree span{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-primary)}',
+      '.dsha .agree-hint{font-size:11px;line-height:1.6;opacity:.78;margin-top:9px}',
+      '.dsha .modal-a .danger[disabled]{opacity:.45;cursor:not-allowed}',
       '.dsha .modal-t{font-size:14px;font-weight:700;margin-bottom:9px}',
       '.dsha .modal-b{font-size:12px;line-height:1.75;color:var(--dsw-alias-label-secondary)}',
       '.dsha .modal-a{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}',

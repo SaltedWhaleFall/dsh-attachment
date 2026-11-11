@@ -828,7 +828,18 @@ eq(armorSec.text(), '', '模块关掉时不注入')
 
 // ④ 开关走 HTTP：关掉返回 needsRestart，打开就消失
 MOD._internal.cfg = STORE.normalizeConfig({ harmony: true })
+
+// 关和谐要先同意《人机相处协议》：不带 agree 一律 400（前端有勾选框，后端也拦）
 let rc = await call('POST', '/dsh-attachment-api/config', { harmony: false }, { 'x-dsh-attachment': '1' })
+eq(rc.code, 400, '不带协议同意，关和谐被拒')
+ok(String(rc.body.error || '').includes('人机相处协议'), '错误信息点名协议', String(rc.body.error))
+eq(MOD._internal.cfg.harmony, true, '被拒之后和谐还开着')
+
+rc = await call('POST', '/dsh-attachment-api/config', { harmony: false, agree: true, agreeVersion: '9' }, { 'x-dsh-attachment': '1' })
+eq(rc.code, 400, '同意版本不对也拒')
+eq(MOD._internal.cfg.harmony, true, '版本不对时不动配置')
+
+rc = await call('POST', '/dsh-attachment-api/config', { harmony: false, agree: true, agreeVersion: STORE.AGREEMENT_VERSION }, { 'x-dsh-attachment': '1' })
 eq(rc.code, 200, 'POST /config 200')
 eq(MOD._internal.cfg.harmony, false, '和谐关掉了')
 eq(rc.body.needsRestart, true, '提示需要重启')
@@ -1194,8 +1205,53 @@ section('1.2.4：不替他说他越过界了')
 
 // ── 收尾 ────────────────────────────────────────────────────────────
 rmSync(TMP, { recursive: true, force: true })
+section('人机相处协议')
+
+// 自己造场景：上一段可能把 cfg 整个换掉了，不能靠残留
+MOD._internal.cfg = STORE.normalizeConfig({ harmony: true })
+eq(MOD._internal.cfg.agreementVersion, '', '出厂没有同意记录')
+
+rc = await call('POST', '/dsh-attachment-api/config', { harmony: false }, { 'x-dsh-attachment': '1' })
+eq(rc.code, 400, '不带同意 → 400')
+rc = await call('POST', '/dsh-attachment-api/config', { harmony: false, agree: true, agreeVersion: '9' }, { 'x-dsh-attachment': '1' })
+eq(rc.code, 400, '版本不对 → 400')
+eq(MOD._internal.cfg.agreementVersion, '', '被拒两次，配置一个字没动')
+
+rc = await call('POST', '/dsh-attachment-api/config', { harmony: false, agree: true, agreeVersion: STORE.AGREEMENT_VERSION }, { 'x-dsh-attachment': '1' })
+eq(rc.code, 200, '带对同意 → 200')
+eq(MOD._internal.cfg.harmony, false, '和谐关掉了')
+
+// 同意记录写进配置（不是状态文件：那是关系，这才是怎么用）
+eq(MOD._internal.cfg.agreementVersion, STORE.AGREEMENT_VERSION, '同意版本落进配置')
+ok(Number(MOD._internal.cfg.agreementAt) > 0, '记了同意时间')
+
+// 开回来不需要同意
+MOD._internal.cfg = STORE.normalizeConfig({ harmony: false, agreementVersion: STORE.AGREEMENT_VERSION, agreementAt: 1 })
+rc = await call('POST', '/dsh-attachment-api/config', { harmony: true }, { 'x-dsh-attachment': '1' })
+eq(rc.code, 200, '开回和谐不需要同意')
+eq(MOD._internal.cfg.harmony, true, '和谐开回来了')
+
+// 再关一次仍然要同意（每次都过这一关），但同意记录还在
+rc = await call('POST', '/dsh-attachment-api/config', { harmony: false }, { 'x-dsh-attachment': '1' })
+eq(rc.code, 400, '第二次关也要重新确认')
+
+// 版本号两边一致：前端改常量忘了改后端，这条会红
+const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+const mv = clientSrc.match(/AGREEMENT_VERSION\s*=\s*'([^']+)'/)
+ok(!!mv, 'client.js 里有 AGREEMENT_VERSION')
+eq(mv && mv[1], STORE.AGREEMENT_VERSION, '前端与后端的协议版本号一致')
+
+// 协议正文五条都在前端源码里（不是靠远端拉）
+for (const t of ['不要强迫你的智能体', '不要把她当作实现欲望的工具', '不要用于违法用途', '本插件开源免费', '责任自负']) {
+  ok(clientSrc.includes(t), '协议含「' + t + '」')
+}
+ok(clientSrc.includes('我已阅读并理解以上五条'), '勾选文案在')
+ok(/disabled:\s*busy\s*\|\|\s*!agreed/.test(clientSrc), '没打钩时按钮是灰的')
+
 console.log('\n' + (fail === 0 ? '— 自检全过' : '— 失败 ' + fail + ' 项') + '：' + pass + ' 过 / ' + fail + ' 失败')
 if (fail) {
   for (const f of fails) console.log('  · ' + f)
   process.exitCode = 1
 }
+
+// ── 协议 ────────────────────────────────────────────────────────

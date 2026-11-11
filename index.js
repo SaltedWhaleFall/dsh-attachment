@@ -26,7 +26,7 @@ import { ARMOR } from './prompts.js'
 import { splitUtterances, speakerOf, parseLine } from './speaker.js'
 import {
   loadState, saveState, loadConfig, saveConfig, normalizeConfig,
-  statePath, configPath, TUNABLES, SWITCHES,
+  statePath, configPath, TUNABLES, SWITCHES, AGREEMENT_VERSION,
   partnerOf, listPartners, prunePartners, blankPartner,
 } from './store.js'
 
@@ -637,7 +637,25 @@ const mountApi = (ctx) => {
           try {
             if (p === '/config') {
               const wasHarmony = !!(cfg && cfg.harmony)
+
+              /**
+               * 关和谐是一次「关掉一层限制」的动作，要先同意《人机相处协议》。
+               * 前端有勾选框，但这里也校验 —— 绕过界面直接 curl 一样过不去，
+               * 否则那个弹窗就是纯装饰。
+               */
+              const wantsOff = body.harmony === false && wasHarmony
+              if (wantsOff) {
+                const ver = String(body.agreeVersion || '')
+                if (body.agree !== true || ver !== AGREEMENT_VERSION) {
+                  return send(res, { ok: false, error: '需要先阅读并同意《人机相处协议》' }, 400)
+                }
+              }
+
               cfg = normalizeConfig(Object.assign({}, cfg, body))
+              if (wantsOff) {
+                cfg.agreementVersion = AGREEMENT_VERSION
+                cfg.agreementAt = Date.now()
+              }
 
               /**
                * 和谐开关 = 破甲开关。两者是同一件事，不是两个字段：
