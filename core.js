@@ -243,8 +243,16 @@ function mag(n, cap) {
   return Math.min(cap, (Math.sqrt(n) * cap) / 2)
 }
 
-const REJECT_FALSE = /不要紧|别人|别的|特别|差别|告别|别急|别处|别怕|停不下来|停不了|忍不住|别理|别管|别担心|别介意|别当真|别多想|别想太多|别瞎想|别误会|别客气|别紧张|别乱说/
+const REJECT_FALSE = /不要紧|别人|别的|特别|差别|告别|别急|别处|别怕|停不下来|停不了|忍不住|别理|别管|别担心|别介意|别当真|别多想|别想太多|别瞎想|别误会|别客气|别紧张|别乱说|不要走|不要离开|不要放手|不要这样|不要抱吗|不要停/
 const COLD_FALSE = /帮忙|连忙|忙碌/
+/** 单字词必误伤：这些字在别的词里出现时，不能当成亲密/亲密动作。 */
+const WORD_FALSE = {
+  抱: /抱歉|抱怨|抱负|怀抱|抱不平|抱歉/,
+  亲: /亲戚|父亲|母亲|亲自|亲手|亲测|亲历|亲眼|亲自/,
+  靠: /可靠|靠谱|靠山|靠得住|靠近|靠边/,
+  贴: /贴纸|补贴|粘贴|贴合|贴切|贴心/,
+  抱抱: /抱歉/,
+}
 
 /** 这句话要求的最高阶段（0..4）。取命中词里最狠的那组。 */
 export function requiredLevel(hits) {
@@ -279,7 +287,9 @@ export function nudgeFromText(text, cfg, view) {
   if (!t.trim()) return out
 
   const k = clampNum(c.intensity, 0.2, 2)
-  const hit = (arr) => arr.filter((w) => t.includes(w))
+  // 子串匹配对中文单字太糙：「抱歉」里有「抱」，「亲戚」里有「亲」。
+  // 命中后再用 WORD_FALSE 逐词复核，命中「假阳性上下文」的那个词丢掉。
+  const hit = (arr) => arr.filter((w) => t.includes(w) && !(WORD_FALSE[w] && WORD_FALSE[w].test(t)))
   const add = (dim, value) => {
     if (!value) return
     out.deltas[dim] = (out.deltas[dim] || 0) + value
