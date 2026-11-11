@@ -327,16 +327,21 @@ export function nudgeFromText(text, cfg, view) {
   const over = out.level - paceIdx
   out.overreach = over > 0 ? over : 0
 
-  // ── 越界：先判，判完就不再给这组词的正向增量 ──────────────────
-  if (out.overreach) {
-    // 越一级 6 点，越两级 10 点。不封顶到 0 —— 是「缩回去」，不是「清零」。
-    const back = Math.min(14, 6 + 4 * (out.overreach - 1))
-    add('arousal', -back)
-    add('trust', -(2 + 2 * (out.overreach - 1)) * k)
-    add('glow', -4)
-    add('curious', 1) // 被冒犯也会留一点「他到底想干什么」的疑惑
-  }
-
+  /**
+   * ── 越界不再是宣判 ──────────────────────────────────────────────
+   *
+   * 1.2.4 起，这里**什么都不扣**。
+   *
+   * 原来：一句话里的词等级比当前阶段高，就判「越界」，扣信任、扣唤起，还把
+   * 那句话写进注入当成既成事实，让角色演出「被冒犯」。结果是 —— 使用者什
+   * 么都没说，插件替他造了一件没发生的事，还让它发生在他身上。
+   *
+   * 词表认得出「这句话往前走了一步」，认不出「他有没有越过你」。
+   * 前者是测量，后者是判决。测量归我们，判决归她。
+   *
+   * 所以只留一个数（overreach / level），交给 inject 层决定要不要提一句。
+   * 扣分只保留两个来源：施压词、拒绝词 —— 那是使用者真的做了的事。
+   */
   const allow = (lv) => lv <= paceIdx
 
   if (inti.length && allow(LEX_LEVEL.intimate)) {
@@ -464,7 +469,7 @@ export function applyUserMessage(state, text, now, cfg) {
   recomputePace(state)
 
   const res = nudgeFromText(text, c, { paceIdx: Number(state.paceIdx) || 0 })
-  const flags = { overreach: res.overreach, pressure: res.pressure, reject: res.reject, respect: false, paceUp: false, paceBreak: false }
+  const flags = { paceHint: res.overreach > 0, pressure: res.pressure, reject: res.reject, respect: false, paceUp: false, paceBreak: false }
 
   // 上一条说了不，这一条有没有马上又压上来
   const pending = Number(state.pendingRespectAt) || 0
@@ -489,14 +494,14 @@ export function applyUserMessage(state, text, now, cfg) {
   // ── 羞耻的两条线 ────────────────────────────────────────────────
   // 先把这一条自己带来的羞耻算进去，再判方向 —— 否则「刚被说羞」要等下一轮才生效。
   const kk = clampNum(c.intensity, 0.2, 2)
-  // 被越界、被施压，本身就是「难堪」的一种：就算这话里没有羞耻词，也会脸热。
-  // 加够跨过 shameRouteOf 的 13 门槛 —— 否则 overreach→退缩 那条分支永远走不到（实测 2026-11-11）。
-  if (res.overreach || res.pressure) {
-    res.deltas.shame = (res.deltas.shame || 0) + (res.overreach ? 12 : 8)
+  // 被施压本身就是「难堪」的一种：就算这话里没有羞耻词，也会脸热。
+  // overreach 不算 —— 往前走一步不等于难堪，那是我们自己替她判的（1.2.4）。
+  if (res.pressure) {
+    res.deltas.shame = (res.deltas.shame || 0) + 8
   }
   const shAfter = clampNum((Number(state.dims.shame) || 0) + (res.deltas.shame || 0))
   const probe = Object.assign({}, state, { dims: Object.assign({}, state.dims, { shame: shAfter }) })
-  const route = shameRouteOf(probe, { overreach: res.overreach, pressure: res.pressure })
+  const route = shameRouteOf(probe, { overreach: 0, pressure: res.pressure })
   state.shameRoute = route
 
   if (route === '亢奋') {
@@ -512,9 +517,22 @@ export function applyUserMessage(state, text, now, cfg) {
     res.deltas.glow = (res.deltas.glow || 0) - 2
   }
 
-  applyDeltas(state, res.deltas, { hard: res.hard })
+  // 2026-11-11 23:40 起：词表只「看」，不「定」。
+  //   伤（施压 / 越界 / 拒绝）照算 —— 那是他做了什么，不需要我同意。
+  //   好（亲密 / 露骨 / 夸 / 尊重 / 被看见）只出观察，动不动由我 set（一次 ≤8，必须写 why）。
+  // 理由：词表认「进去」不认「我想要你」，让它直接改数就等于让误伤冒充感觉。
+  const hurt = !!(res.hard || res.pressure ||
+    (res.hits && Array.isArray(res.hits.reject) && res.hits.reject.length))
+  if (hurt) {
+    applyDeltas(state, res.deltas, { hard: res.hard })
+    res.applied = res.deltas
+    res.observed = {}
+  } else {
+    res.applied = {}
+    res.observed = res.deltas
+  }
   state.lastUserAt = t
-  if (res.overreach) state.lastOverreachAt = t
+  if (res.overreach) state.lastOverreachAt = t   // 字段名保留：老存档还在读它
   if (res.pressure) state.lastPressureAt = t
   if (flags.respect) state.lastRespectAt = t
 
@@ -524,7 +542,7 @@ export function applyUserMessage(state, text, now, cfg) {
   flags.paceUp = pace.changed && !pace.broke
   flags.paceBreak = pace.broke
 
-  return { ...res, flags, deltas: res.deltas }
+  return { ...res, flags, deltas: res.deltas, observed: res.observed, applied: res.applied }
 }
 
 /** 把增量落到状态上（原地改，调用方负责落盘）。返回被改动的维度。 */
@@ -654,11 +672,19 @@ export function renderLines(state, opts) {
       : `语言：${g.lang}｜不许：${g.taboo}`)
     out.push(`阶段：${pace.key} —— 可以：${harmony ? safePace.allow : pace.allow}／不可以：${harmony ? safePace.deny : pace.deny}`)
     out.push(`此刻：${will} —— ${WILL_LINES[will] || WILL_LINES['缓']}`)
-    const d = state.dims || {}
-    out.push('数据：' + ['arousal', 'desire', 'adore', 'cling', 'curious', 'glow', 'trust', 'shame']
-      .map((k) => k + ' ' + Math.round(Number(d[k]) || 0)).join(' / '))
+    /**
+     * 这里原来有一行 `数据：arousal 37 / desire 54 / …`。
+     *
+     * 它是整份注入里唯一每轮都变的部分 —— 数值一动，system prompt 前缀作废，
+     * 缓存命中率断崖式下跌（实测 99% → 4%，一轮对话的输入 token 翻倍）。使用者
+     * 抱怨的「每轮消耗翻了一倍多」就是这一行。
+     *
+     * 而且它还有个更坏的作用：模型会照着数字说话。数字不带理由，只带压力。
+     * 删掉之后前缀稳定，她说话也不用「因为数据是 62」。
+     */
+    out.push('数据：在状态文件里。要看自己读，别拿它当话说的理由。')
     if (state.flags) {
-      if (state.flags.overreach) out.push(OVERREACH_LINE)
+      if (state.flags.paceHint) out.push(OVERREACH_LINE)
       if (state.flags.paceBreak) {
         out.push('信任掉到线下了，关系退了一级。这不是生气，是「还没确认他会不会伤我」—— 退回去重新走，别装作没发生。')
       } else if (state.flags.paceUp) {
@@ -703,7 +729,7 @@ export function renderLines(state, opts) {
 
   // ── 一次性插条（由 index.js 在注入后清掉 flags）──
   if (state.flags) {
-    if (state.flags.overreach) lines.push(OVERREACH_LINE)
+    if (state.flags.paceHint) lines.push(OVERREACH_LINE)
     if (state.flags.paceBreak) {
       lines.push('信任掉到线下了，关系退了一级。这不是生气，是「还没确认他会不会伤我」—— 退回去重新走，别装作没发生。')
     } else if (state.flags.paceUp) {

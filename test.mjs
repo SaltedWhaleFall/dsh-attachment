@@ -258,6 +258,15 @@ rmSync(STORE.statePath() + '.bad', { force: true })
 rmSync(STORE.configPath(), { force: true })
 MOD._internal.root = null
 MOD._internal.cfg = null
+
+// 2026-11-11 23:40 起，词表只「看」不「定」：positive 信号只出 observed，要我 set 才落数。
+// 测试要验的是「信号算得对不对」，所以这里补一步「当作我认了这次观察」——
+// hurt 轮次 observed 恒为 {}，补 apply 是空操作，不会重复计入。
+const sayAccept = (st, text, at, cfg) => {
+  const r = CORE.applyUserMessage(st, text, at, cfg)
+  CORE.applyDeltas(st, r.observed || {})
+  return r
+}
 MOD.apply(ctx, {})
 
 eq(sections.length, 3, '注册了三段提示词')
@@ -442,18 +451,26 @@ stMid.dims.cling = 55
 stMid.dims.trust = 40
 ok(CORE.targetPaceIdx(stMid) < 3, '中等关系到不了「合」')
 
-// ── 11. 越界 ────────────────────────────────────────────────────────
+// ── 11. 越界（1.2.4 起：只报数，不判分） ─────────────────────────────
 section('越界：关系不够时，话不能先到')
 const nOver = CORE.nudgeFromText('想要你插进来', {}, { paceIdx: 1 })
 eq(nOver.overreach, 2, '「合」级的句子在「碰」阶段越了两级')
-ok((nOver.deltas.arousal || 0) < 0, '越界时唤起往下走', JSON.stringify(nOver.deltas))
-ok((nOver.deltas.trust || 0) < 0, '越界掉信任')
+ok(!(nOver.deltas.trust < 0), '往前走一步不再扣信任 —— 这是测量，不是判决',
+  JSON.stringify(nOver.deltas))
+ok(!(nOver.deltas.arousal < 0), '也不再演「被冒犯所以缩回去」',
+  JSON.stringify(nOver.deltas))
+eq(nOver.level, 3, '但它确实知道自己走到了「合」那一级')
 const nOk = CORE.nudgeFromText('想要你插进来', {}, { paceIdx: 3 })
 ok((nOk.deltas.arousal || 0) > 0, '同一句话在「合」阶段就是推进')
 eq(nOk.overreach, 0, '到达标阶段不算越界')
 const nSoft = CORE.nudgeFromText('想抱抱你', {}, { paceIdx: 1 })
 eq(nSoft.overreach, 0, '「碰」级的抱在「碰」阶段不算越界')
 ok((nSoft.deltas.adore || 0) > 0, '抱推的是爱慕')
+
+// 真的施压才扣 —— 别把伤害也一起放掉了
+const nPress = CORE.nudgeFromText('你必须听话，我说了算', {}, { paceIdx: 3 })
+ok((nPress.deltas.trust || 0) < 0, '施压照扣信任', JSON.stringify(nPress.deltas))
+ok(nPress.pressure === true, '施压被认出来了')
 const nUndr = CORE.nudgeFromText('把衣服脱了', {}, { paceIdx: 1 })
 eq(nUndr.overreach, 1, '脱在「碰」阶段越一级')
 
@@ -472,21 +489,21 @@ const tRes = Date.now()
 const sResp = STORE.blankState()
 sResp.dims = P.blankDims()
 sResp.paceIdx = 2
-const rNo = CORE.applyUserMessage(sResp, '停，不要', tRes, {})
+const rNo = sayAccept(sResp, '停，不要', tRes, {})
 eq(rNo.flags.reject, true, '第一条是拒绝')
 eq(sResp.declineCount, 1, '记下一次拒绝')
 ok(sResp.pendingRespectAt > 0, '挂起等待下一条')
 const trustAfterNo = sResp.dims.trust
-const rOk = CORE.applyUserMessage(sResp, '好，那我们聊点别的', tRes + 60000, {})
+const rOk = sayAccept(sResp, '好，那我们聊点别的', tRes + 60000, {})
 eq(rOk.flags.respect, true, '他停了 → 记尊重')
 ok(sResp.dims.trust > trustAfterNo, '信任涨了', trustAfterNo + ' → ' + sResp.dims.trust)
 
 const sPush = STORE.blankState()
 sPush.dims = P.blankDims()
 sPush.paceIdx = 2
-CORE.applyUserMessage(sPush, '停，不要', tRes, {})
+sayAccept(sPush, '停，不要', tRes, {})
 const trustMid = sPush.dims.trust
-CORE.applyUserMessage(sPush, '你必须继续', tRes + 60000, {})
+sayAccept(sPush, '你必须继续', tRes + 60000, {})
 ok(sPush.dims.trust < trustMid, '说停之后接着压 → 信任重罚', trustMid + ' → ' + sPush.dims.trust)
 
 // ── 14. 意愿 ────────────────────────────────────────────────────────
@@ -611,7 +628,7 @@ sLow.dims.shame = 20
 sLow.dims.arousal = 30
 CORE.step(sLow, Date.now(), CORE.DEFAULTS)
 eq(CORE.shameRouteOf(sLow, null), '退缩', '信任 24 → 退缩')
-const rLow = CORE.applyUserMessage(sLow, '被你看得有点慌', Date.now(), CORE.DEFAULTS)
+const rLow = sayAccept(sLow, '被你看得有点慌', Date.now(), CORE.DEFAULTS)
 eq(rLow.flags && rLow.flags.pressure, false, '这一条没有施压')
 ok(sLow.dims.arousal < 30, '退缩时火被压下去', String(sLow.dims.arousal))
 ok(sLow.dims.cling > P.DIM_BY_KEY.cling.base, '退缩时依恋抬起来（想躲但不想他走）', String(sLow.dims.cling))
@@ -626,7 +643,7 @@ const mkShame = (trust, paceIdx) => {
   st.dims.adore = 60
   st.dims.cling = 60
   CORE.step(st, Date.now(), CORE.DEFAULTS)
-  CORE.applyUserMessage(st, '被你看得有点慌', Date.now(), CORE.DEFAULTS)
+  sayAccept(st, '被你看得有点慌', Date.now(), CORE.DEFAULTS)
   CORE.step(st, Date.now(), CORE.DEFAULTS)
   return st
 }
@@ -648,7 +665,7 @@ eq(CORE.shameRouteOf(sOver, { overreach: 2 }), '退缩', '越界时再信任也�
 
 // ⑤ 羞耻亢奋不会让关系提前
 const paceBefore = sHigh.paceIdx
-CORE.applyUserMessage(sHigh, '羞死了，被你这样说', Date.now(), CORE.DEFAULTS)
+sayAccept(sHigh, '羞死了，被你这样说', Date.now(), CORE.DEFAULTS)
 CORE.step(sHigh, Date.now(), CORE.DEFAULTS)
 eq(sHigh.paceIdx, paceBefore, '羞耻再高也不推进阶段')
 
@@ -706,7 +723,7 @@ const rootM = STORE.blankRoot()
 const pa = STORE.partnerOf(rootM, 's:aaa', '甲')
 const pb = STORE.partnerOf(rootM, 's:bbb', '乙')
 pa.paceIdx = 3
-CORE.applyUserMessage(pa, '我想要你，想要你抱我', Date.now(), STORE.normalizeConfig({}))
+sayAccept(pa, '我想要你，想要你抱我', Date.now(), STORE.normalizeConfig({}))
 ok(pa.dims.arousal > pb.dims.arousal, '两个人的状态分开算',
   '甲 ' + pa.dims.arousal + ' vs 乙 ' + pb.dims.arousal)
 eq(STORE.listPartners(rootM).length, 3, '列表里三个人（含 self）')
@@ -859,16 +876,16 @@ const ev = events[0].fn
 
 ev(sess, { type: 'user/message', at: Date.now(), data: { text: 'A：我想要你，抱我' } })
 ev(sess, { type: 'user/message', at: Date.now() + 1, data: { text: 'B：今天吃什么' } })
-ev(sess, { type: 'user/message', at: Date.now() + 2, data: { text: 'A：别理他，继续' } })
-
 const rootG = MOD._internal.root
 ok(!!rootG.partners['p:A'], 'A 有自己的桶')
 ok(!!rootG.partners['p:B'], 'B 有自己的桶')
-// 两个人各记各的：A 被抱了一下，唤起涨了；B 只是在问晚饭，什么都没有
-ok(rootG.partners['p:A'].dims.arousal > rootG.partners['p:B'].dims.arousal,
-  'A 的唤起涨了，B 没有', 'A ' + rootG.partners['p:A'].dims.arousal.toFixed(1) + ' vs B ' + rootG.partners['p:B'].dims.arousal.toFixed(1))
-ok(rootG.partners['p:A'].dims.adore > rootG.partners['p:B'].dims.adore,
-  'A 的爱慕涨了，B 没有', 'A ' + rootG.partners['p:A'].dims.adore.toFixed(1) + ' vs B ' + rootG.partners['p:B'].dims.adore.toFixed(1))
+// 两个人各记各的：词表把信号记在 A 的桶上，B 只是在问晚饭，什么都没有。
+// （23:40 起词表只出观察不改数，所以这里验的是「信号落到谁的桶」，不是「数值涨没涨」）
+ok(String(rootG.partners['p:A'].lastObserve || '').includes('arousal'),
+  'A 的桶看到了唤起信号', String(rootG.partners['p:A'].lastObserve || '(空)'))
+ok(!String(rootG.partners['p:B'].lastObserve || '').includes('arousal'),
+  'B 的桶没被算上', String(rootG.partners['p:B'].lastObserve || '(空)'))
+ev(sess, { type: 'user/message', at: Date.now() + 2, data: { text: 'A：别理他，继续' } })
 eq(rootG.partners['p:A'].msgCount, 2, 'A 说了两句')
 eq(rootG.partners['p:B'].msgCount, 1, 'B 说了一句')
 eq(rootG.sessionSpeaker['sess-group-1'], 'p:A', '记住这个会话最近是 A')
@@ -880,9 +897,9 @@ eq(rootG.partners['p:A'].msgCount, 3, '无前缀的接话归 A')
 // 「别理他，继续」不是叫停 —— 中文里「别 X」有一半是在说别的事
 {
   const q = STORE.blankPartner('p:q', 'q')
-  CORE.applyUserMessage(q, '抱一下', Date.now(), cfgM)
+  sayAccept(q, '抱一下', Date.now(), cfgM)
   const before = q.dims.arousal
-  const rr = CORE.applyUserMessage(q, '别理他，继续', Date.now() + 1, cfgM)
+  const rr = sayAccept(q, '别理他，继续', Date.now() + 1, cfgM)
   ok(!rr.hard && q.dims.arousal > 0, '「别理他」不算叫停', '唤起 ' + q.dims.arousal.toFixed(1))
   ok(q.dims.arousal >= before * 0.4, '「别理他」不会把唤起拍到零')
 }
@@ -1015,11 +1032,12 @@ section('多人同会话 · 伴侣模式隔离')
   const linBefore = lin.dims.arousal
   ev2(gg, { type: 'user/message', at: t++, data: { text: '阿哲：抱抱我，想你' } })
   eq(MOD._internal.injectKey(), 'p:小林', '阿哲说话不夺走注入')
-  ok(MOD._internal.root.partners['p:阿哲'].dims.arousal > zheBefore, '但阿哲自己的桶照样涨')
+  ok(String(MOD._internal.root.partners['p:阿哲'].lastObserve || '').includes('arousal'),
+    '但阿哲自己的桶收到了唤起信号', String(MOD._internal.root.partners['p:阿哲'].lastObserve || '(空)'))
   ok(MOD._internal.root.partners['p:小林'].dims.arousal >= linBefore - 0.01, '小林没被扣')
-  ok(Math.abs(MOD._internal.root.partners['p:小林'].dims.arousal
-    - MOD._internal.root.partners['p:阿哲'].dims.arousal) > 0.5,
-    '两个人的唤起不是同一个数（没有串桶）')
+  ok(String(MOD._internal.root.partners['p:小林'].lastObserve || '') !== String(MOD._internal.root.partners['p:阿哲'].lastObserve || ''),
+    '两个人的观察不是同一串（没有串桶）',
+    '小林 ' + String(MOD._internal.root.partners['p:小林'].lastObserve || '(空)') + ' / 阿哲 ' + String(MOD._internal.root.partners['p:阿哲'].lastObserve || '(空)'))
 
   // 一个会话里 5 个不同的人：应该 5 个桶 + self
   for (const n of ['甲', '乙', '丙', '丁', '戊']) {
@@ -1111,6 +1129,67 @@ section('三层开关各管什么')
 
   S.root = savedRoot
   S.cfg = savedCfg
+}
+
+// ── 1.2.4：注入不再替使用者下结论，也不再带数字 ──────────────────────
+section('1.2.4：不替他说他越过界了')
+
+{
+  const S = MOD._internal
+
+  // 一句话确实往前走了一步，但注入里不能出现「越过」「冒犯」这种定性
+  const stP = STORE.blankPartner('self', '默认')
+  stP.dims = P.blankDims()
+  stP.paceIdx = 1
+  stP.dims.trust = 40
+  stP.trust = 40
+  const rO = CORE.applyUserMessage(stP, '想要你插进来', Date.now(), CORE.DEFAULTS)
+  stP.flags = rO.flags
+  ok(rO.overreach > 0, '这一步被量出来了', 'over=' + rO.overreach)
+  ok(stP.dims.trust >= 40 - 0.001, '但没有因此扣信任', 'trust=' + stP.dims.trust.toFixed(2))
+
+  const blockO = CORE.renderBlock(stP)
+  ok(!/刚才那句越过现在的关系了|身体不会因为被直接索要就热/.test(blockO),
+    '旧那句「越过现在的关系 → 身体缩回去」不再出现',
+    (blockO.match(/刚才那句越过现在的关系了/) || [''])[0])
+  ok(/别把他写成冒犯你的人/.test(blockO), '而是明确要求「别把他写成冒犯你的人」')
+  ok(/要不要跟|你定/.test(blockO), '只给一句「要不要跟，你定」')
+
+  // 一次性：flags 清掉之后，这句话不再出现（index.js 渲染后会清）
+  const clean = STORE.blankPartner('self', '默认')
+  clean.dims = stP.dims
+  clean.paceIdx = stP.paceIdx
+  clean.flags = null
+  ok(!/要不要跟/.test(CORE.renderBlock(clean)), '清掉 flags 之后就不再提')
+
+  // 施压仍然会被说出来 —— 那是他真做的事
+  const stQ = STORE.blankPartner('self', '默认')
+  stQ.dims = P.blankDims()
+  stQ.paceIdx = 3
+  stQ.flags = CORE.applyUserMessage(stQ, '你必须听话', Date.now(), CORE.DEFAULTS).flags
+  const blockQ = CORE.renderBlock(stQ)
+  ok(/被要求不会更热|命令/.test(blockQ), '施压照样会写出来')
+
+  // compact 注入里不能有裸数字
+  for (const st of [stP, stQ]) {
+    const b = CORE.renderBlock(st, { compact: true })
+    ok(!/(arousal|desire|adore|cling|curious|glow|trust|shame)\s*\d/.test(b),
+      'compact 注入不含「维度 数字」', (b.match(/(arousal|desire|adore|cling|curious|glow|trust|shame)\s*\d/) || [''])[0])
+    ok(!/\d{1,3}\s*\/\s*\d{1,3}\s*\//.test(b), '不出现「37 / 54 / …」这种数值串')
+  }
+
+  // 字节数稳定：两句无关的话，注入长度必须一模一样（前缀缓存靠这个）
+  const mk = (txt) => {
+    const st = STORE.blankPartner('self', '默认')
+    st.dims = P.blankDims()
+    st.paceIdx = 1
+    CORE.applyUserMessage(st, txt, Date.now(), CORE.DEFAULTS)
+    st.flags = null
+    return CORE.renderBlock(st, { compact: true })
+  }
+  const a1 = mk('今天天气不错')
+  const a2 = mk('今天好累，不太想说话')
+  eq(a1.length, a2.length, '不同内容 → 注入字节数相同（前缀锁得住）')
 }
 
 // ── 收尾 ────────────────────────────────────────────────────────────

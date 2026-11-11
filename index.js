@@ -263,7 +263,13 @@ const mountCore = (ctx) => {
           const out = renderLines(p, { harmony: !!cfg.harmony, compact: true }).join('\n')
           // 一次性插条发过一次就作废：留着会让「刚才越界了」这句话挂一整天。
           if (p.flags) { p.flags = null; maybeSave(false) }
-          return out
+          // 词表这一轮看到了什么：只报观察，不改数。动不动的权力在我，不在它。
+          let tail = ''
+          if (p.lastObserve) {
+            tail = '\n词表看到：' + p.lastObserve + '。要不要动、动多少，你定（set，一次 ≤8，写 why）。'
+            p.lastObserve = ''
+          }
+          return out + tail
         } catch (e) {
           return ''
         }
@@ -365,11 +371,17 @@ B：yyy」。
           }
           // 一次性插条：下一次注入发一次就清（renderLines 里读、这里置）
           p.flags = res.flags
+          // 词表的观察：只留到下一次注入，读完就清。它不改数，只报「我看到了什么」。
+          const ob = res.observed || {}
+          const obKeys = Object.keys(ob).filter((k) => Math.abs(Number(ob[k]) || 0) >= 0.3)
+          p.lastObserve = obKeys.length
+            ? obKeys.map((k) => k + (ob[k] > 0 ? '+' : '') + Number(ob[k]).toFixed(1)).join(' ')
+            : ''
           CORE.step(p, at, cfg)
           touched = key
 
           // 制动 / 越界 / 阶段变化都要立刻落盘：那是关系真的移动过的一次，重启不该忘。
-          const urgent = !!(res.hard || res.flags.overreach || res.flags.pressure
+          const urgent = !!(res.hard || res.flags.paceHint || res.flags.pressure
             || res.flags.respect || res.flags.paceUp || res.flags.paceBreak)
           if (cfg.multiPartner && (Number(p.msgCount) || 0) % 20 === 0) {
             prunePartners(root, 40)
