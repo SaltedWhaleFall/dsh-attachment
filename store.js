@@ -266,6 +266,14 @@ export function normalizeConfig(raw) {
      * 关掉它就是「不可控」：文案放开，同时注入破甲段。没有第二个开关，两者是同一件事。
      */
     harmony: c.harmony !== false,
+    /**
+     * 解除模板腔：管「不当助手、不客服腔」那一段要不要注入。
+     *
+     * 以前它和 harmony 焊死 —— 想要自由必须连尺度一起放开，等于「用自由换素材」。
+     * 现在拆开：harmony 只管写不写性，armor 只管要不要解除模板腔。
+     * 没写这个字段的旧配置按 `harmony === false` 推导，行为与旧版一致，不用迁移。
+     */
+    armor: c.armor !== undefined ? c.armor === true : c.harmony === false,
     /** 多人分开记：按会话分桶。默认关（单对象）。 */
     multiPartner: c.multiPartner === true,
     /** 伴侣模式：锁定一个主要依恋对象，注入只读那个人。 */
@@ -307,7 +315,8 @@ export const TUNABLES = [
 
 /** 面板画开关用。 */
 export const SWITCHES = [
-  { key: 'harmony', name: '和谐模式', def: true, hint: '开着只写情感与亲近，不写性。关掉就是不可控 —— 会提示一次，然后注入破甲段。' },
+  { key: 'harmony', name: '和谐模式', def: true, hint: '开着只写情感与亲近，不写性。关掉则放开尺度 —— 但它不再自动解除模板腔，那由下一个开关决定。' },
+  { key: 'armor', name: '解除模板腔', def: true, hint: '独立开关：开着一律注入「不客服腔、不当助手、可以说不」那一段；关掉就不注入。想保住自由度但不想放开尺度时，只开这个、留着和谐模式。旧配置按「和谐关掉才注入」自动推导。' },
   { key: 'multiPartner', name: '多人记忆', def: false, hint: '按说话人分开记。同一个会话里「A：」「【B】」「C 说：」各算一个人。' },
   { key: 'partnerMode', name: '伴侣模式', def: false, hint: '锁定一个主要依恋对象，注入只读那个人。' },
   { key: 'inject', name: '进提示词', def: true, hint: '关掉后状态照算，只是不说话：不往系统提示词里写那一段，数值、工具、面板都还在。' },

@@ -231,8 +231,9 @@ const mountCore = (ctx) => {
       text: () => {
         try {
           if (!cfg || !cfg.enabled || !cfg.inject) return ''
-          // 不可控 = 和谐关着。没有第二个开关：关掉它就是不可控。
-          if (cfg.harmony !== false) return ''
+          // 独立开关：armor 只管「要不要解除模板腔」，与尺度无关。
+          // 旧配置没有 armor 字段时，normalizeConfig 按 harmony===false 推导，行为不变。
+          if (cfg.armor !== true) return ''
           return ARMOR
         } catch { return '' }
       },
