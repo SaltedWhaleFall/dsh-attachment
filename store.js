@@ -19,7 +19,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, copyFil
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { blankDims, DIMENSIONS } from './prompts.js'
-import { DEFAULTS, clampNum } from './core.js'
+import { DEFAULTS, clampNum, heatOf, bandOf, willOf, HEAT_BANDS } from './core.js'
 
 export function homeDir() {
   return process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -139,6 +139,37 @@ export function normalizePartner(raw, key, label) {
  *   ② 没有，但有旧的 dsh-sex.json → 迁移（整份当成 'self'），并立刻写新文件
  *   ③ 都没有 → 出厂
  */
+/**
+ * 一次性初值：`dsh-attachment-seed.json` 存在时，把它写进某个桶，然后改名退休。
+ * 用途：把一份「我认为可以」的印象直接落成初值，不必等消息一轮轮累积。
+ * 只做一次 —— 套完改名成 `.applied`，之后仍按真实对话走，不会每次启动都盖掉变化。
+ *
+ *   { key?: 'self', label?: '默认', dims: {desire, arousal, …}, note?: {} }
+ */
+function applySeed(root) {
+  const path = dataFile('dsh-attachment-seed.json')
+  if (!existsSync(path)) return ''
+  const r = readJsonSafe(path, 'dsh-attachment-seed.json')
+  if (!r.ok || !r.data || typeof r.data !== 'object') return ''
+  const dims = r.data.dims
+  if (!dims || typeof dims !== 'object') return ''
+  const key = typeof r.data.key === 'string' && root.partners[r.data.key] ? r.data.key : (root.activeKey || 'self')
+  const p = partnerOf(root, key, r.data.label || '默认')
+  for (const d of DIMENSIONS) {
+    if (Number.isFinite(Number(dims[d.key]))) p.dims[d.key] = clampNum(dims[d.key])
+  }
+  p.trust = Number(p.dims.trust) || 0
+  // 顺带把派生量重算一遍：不然初值换了，读出来还是上一轮的「拒」「静」
+  const heat = Number(heatOf(p.dims).toFixed(2))
+  p.heat = heat
+  p.heatBand = bandOf(heat, null, HEAT_BANDS)
+  p.will = willOf(p)
+  if (r.data.note && typeof r.data.note === 'object') p.initNote = r.data.note
+  try { renameSync(path, path + '.applied') } catch {}
+  saveState(root)
+  return key
+}
+
 export function loadState() {
   const r = readJsonSafe(statePath(), 'dsh-attachment.json')
   if (r.ok && r.data && typeof r.data === 'object') {
@@ -167,7 +198,8 @@ export function loadState() {
     for (const [sid, k] of Object.entries(ss)) {
       if (typeof k === 'string' && root.partners[k]) root.sessionSpeaker[sid] = k
     }
-    return { root, migrated: null }
+    const seeded = applySeed(root)
+    return { root, migrated: null, seeded }
   }
 
   // 旧包名的一次性迁移：只读，不改旧文件

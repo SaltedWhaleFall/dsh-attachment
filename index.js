@@ -70,6 +70,7 @@ function ensureLoaded() {
     if (loadError) log('状态文件有问题，已起空状态：', loadError)
     delete root._loadError
     if (r.migrated) log('从 ' + r.migrated + ' 迁移了状态')
+    if (r.seeded) log('套用了初值种子，落到桶：' + r.seeded)
   }
   return { root, cfg }
 }
@@ -227,6 +228,27 @@ const mountCore = (ctx) => {
 
   const tools = ctx.get ? ctx.get('tools') : ctx.tools
 
+  /**
+   * 静态段（常法 / 不可控段）降频。
+   *
+   * 这两段加起来三千字，内容一个会话里几乎不变。原来每轮重发一遍，
+   * 一百五十轮就是五十万字 —— 上下文撑不住，缓存也白读。
+   *
+   * 现在：首轮发，之后每 INJECT_EVERY 轮重发一次。同一轮里两个 section
+   * 各调一次 text()，用 staticStamp 保证只判一次。
+   */
+  const INJECT_EVERY = 20
+  let staticStamp = { turn: NaN, ok: false }
+  const staticDue = (p) => {
+    const t = Number(p.turns) || 0
+    if (staticStamp.turn === t) return staticStamp.ok
+    const last = Number(p.lastStaticAt)
+    const ok = !Number.isFinite(last) || (t - last) >= INJECT_EVERY
+    if (ok) { p.lastStaticAt = t; maybeSave(false) }
+    staticStamp = { turn: t, ok }
+    return ok
+  }
+
   // ① 主段：状态怎么说话。order 920 —— 在 mood(900) 之后，语气先立住，欲望落在它上面。
   if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
     ctx.effect(() => ctx.systemPrompt.section({
@@ -238,7 +260,7 @@ const mountCore = (ctx) => {
           if (!cfg || !cfg.enabled || !cfg.inject) return ''
           const p = current()
           CORE.step(p, Date.now(), cfg)
-          const out = renderLines(p, { harmony: !!cfg.harmony }).join('\n')
+          const out = renderLines(p, { harmony: !!cfg.harmony, compact: true }).join('\n')
           // 一次性插条发过一次就作废：留着会让「刚才越界了」这句话挂一整天。
           if (p.flags) { p.flags = null; maybeSave(false) }
           return out
@@ -256,6 +278,7 @@ const mountCore = (ctx) => {
       text: () => {
         try {
           if (!cfg || !cfg.enabled) return ''
+          if (!staticDue(current())) return ''
           return cfg.harmony ? PROCEDURE_SAFE : PROCEDURE
         } catch { return '' }
       },
@@ -281,6 +304,7 @@ const mountCore = (ctx) => {
           // 独立开关：armor 只管「要不要解除模板腔」，与尺度无关。
           // 旧配置没有 armor 字段时，normalizeConfig 按 harmony===false 推导，行为不变。
           if (cfg.armor !== true) return ''
+          if (!staticDue(current())) return ''
           return ARMOR
         } catch { return '' }
       },
@@ -385,13 +409,14 @@ B：yyy」。
       description:
         '查看或微调自己的依恋状态。read 看现在到哪了（关系阶段、意愿、一句话状态）；'
         + 'touch 给某个维度加一点（只在自己真的被什么触动时用，别拿它刷）；'
+        + 'set 自己给某个维度定一个目标值（单次幅度受限，减也受限，防止一次写过火）；'
         + 'brake 立刻把唤起压下去；decline 明确拒绝这一轮（不用给理由）；'
         + 'list 看有几个对象、各自到哪一段；switch 切到某个对象；primary 把某个对象设成伴侣。',
       parameters: {
         action: {
           type: 'string',
-          enum: ['read', 'touch', 'brake', 'decline', 'list', 'switch', 'primary'],
-          description: 'read=读状态；touch=推一点；brake=收；decline=拒绝；list=列对象；switch=切换；primary=设伴侣',
+          enum: ['read', 'touch', 'set', 'brake', 'decline', 'list', 'switch', 'primary'],
+          description: 'read=读状态；touch=推一点；set=自己给一个目标值；brake=收；decline=拒绝；list=列对象；switch=切换；primary=设伴侣',
         },
         dim: {
           type: 'string',
@@ -399,6 +424,7 @@ B：yyy」。
           description: 'touch 时要推的维度：arousal 唤起 / desire 欲望 / adore 爱慕 / cling 依恋 / curious 好奇 / glow 余韵 / shame 羞耻 / trust 信任',
         },
         amount: { type: 'number', description: 'touch 的量，1~12，默认 4' },
+        to: { type: 'number', description: 'set 的目标值 0~100。单次最多挪 8 点（可按配置调，最多 20），要更快只能多来几次' },
         key: { type: 'string', description: 'switch / primary 时的对象 key（list 里能看到）' },
         why: { type: 'string', description: '为什么推 —— 一句话，会写进日志' },
       },
@@ -474,6 +500,28 @@ B：yyy」。
             maybeSave(false)
             log('touch', dim, '+', amt.toFixed(1), a.why ? '｜' + String(a.why).slice(0, 120) : '')
             return { ok: true, message: '推了一点。现在：' + shortLine(p) }
+          }
+          if (act === 'set') {
+            // 模型自己判断「现在应该到哪」，但不许一步跳到位 ——
+            // 一次最多挪 setStep（默认 8）。想从 58 掉到 30，得几轮慢慢来。
+            // 这条限制是为了拦住两种东西：讨好时的自我拔高，和赌气时的自我贬低。
+            const dim = String(a.dim || '')
+            if (!DIM_BY_KEY[dim]) {
+              return { ok: false, message: '没有这个维度：' + dim + '。可用：' + DIMENSIONS.map((d) => d.key).join('/') }
+            }
+            const to = Number(a.to)
+            if (!Number.isFinite(to)) return { ok: false, message: 'set 要一个数：to（0~100）' }
+            const cap = Math.max(1, Math.min(20, Number(cfg.setStep) || 8))
+            const cur = Number(p.dims[dim]) || 0
+            const want = Math.max(0, Math.min(100, to))
+            const move = Math.max(-cap, Math.min(cap, want - cur))
+            CORE.applyDeltas(p, { [dim]: move })
+            CORE.step(p, Date.now(), cfg)
+            maybeSave(true)
+            const now = Number(p.dims[dim]) || 0
+            log('set', dim, cur.toFixed(1), '->', now.toFixed(1), a.why ? '｜' + String(a.why).slice(0, 120) : '')
+            const left = Math.abs(want - now) >= 0.5 ? '（一次最多 ' + cap + '，剩下慢慢来）' : ''
+            return { ok: true, message: dim + ' ' + Math.round(now) + left + '。现在：' + shortLine(p) }
           }
           return { ok: false, message: '不认识的 action：' + act }
         } catch (err) {

@@ -44,17 +44,26 @@
  * trust 的 base 只有 22，且半衰期 64 轮：它是这套系统里最难涨、最容易掉的量。
  * 聊一晚不该掉信任，但一句「你必须」能立刻掉一截。
  */
+/**
+ * slow: true —— 长效维度，**不自动按轮次回落**。
+ *
+ * 关系是攒出来的，不是耗出来的：挂机三十轮不该让「他对我重要」这件事变淡。
+ * 这四个只能被两样东西改：真实发生的话（词表加减），和自己给自己打分（attachment set，
+ * 单次幅度受限）。掉了就是真的掉了，不会自己长回来。
+ *
+ * 短效的三个（唤起 / 余韵 / 羞耻）仍然每轮回落 —— 那是身体，不是关系。
+ */
 export const DIMENSIONS = [
-  { key: 'desire',  name: '欲望', base: 30, halfLifeTurns: 24, capMsg: 3,  capTurn: 3 },
+  { key: 'desire',  name: '欲望', base: 30, halfLifeTurns: 24, capMsg: 3,  capTurn: 3, slow: true },
   { key: 'arousal', name: '唤起', base: 6,  halfLifeTurns: 2,  capMsg: 12, capTurn: 8 },
-  { key: 'adore',   name: '爱慕', base: 45, halfLifeTurns: 48, capMsg: 5,  capTurn: 4 },
-  { key: 'cling',   name: '依恋', base: 40, halfLifeTurns: 32, capMsg: 4,  capTurn: 3 },
+  { key: 'adore',   name: '爱慕', base: 45, halfLifeTurns: 48, capMsg: 5,  capTurn: 4, slow: true },
+  { key: 'cling',   name: '依恋', base: 40, halfLifeTurns: 32, capMsg: 4,  capTurn: 3, slow: true },
   { key: 'curious', name: '好奇', base: 35, halfLifeTurns: 16, capMsg: 6,  capTurn: 5 },
   { key: 'glow',    name: '余韵', base: 5,  halfLifeTurns: 1.5, capMsg: 10, capTurn: 6 },
   // 羞耻是唯一一个**不直接决定方向**的维度：它只放大已有的东西。
   // 同一个值，信任够就是助燃，信任不够就是想缩。方向由 shameRoute 判，不写在维度里。
   { key: 'shame',   name: '羞耻', base: 5,  halfLifeTurns: 6,  capMsg: 16, capTurn: 6 },
-  { key: 'trust',   name: '信任', base: 22, halfLifeTurns: 64, capMsg: 6,  capTurn: 4 },
+  { key: 'trust',   name: '信任', base: 22, halfLifeTurns: 64, capMsg: 6,  capTurn: 4, slow: true },
 ]
 
 export const DIM_KEYS = DIMENSIONS.map((d) => d.key)

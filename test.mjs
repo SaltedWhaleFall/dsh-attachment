@@ -217,6 +217,18 @@ ok(!('junk' in cf), '白名单外字段被丢')
 STORE.saveConfig(cf)
 eq(STORE.loadConfig().intensity, 2, '配置读写一致')
 
+// 一次性初值：给了 seed 就套一次，套完改名退休，第二次加载不再盖掉变化
+const seedPath = join(TMP, 'dsh-attachment-seed.json')
+STORE.saveState(STORE.blankRoot())   // 先把上面坏 JSON 那段的残局清成合法文件
+writeFileSync(seedPath, JSON.stringify({ key: 'self', dims: { trust: 77, cling: 66 } }))
+const seeded = STORE.loadState()
+eq(seeded.seeded, 'self', 'seed 落到 self 桶')
+eq(seeded.root.partners.self.dims.trust, 77, 'seed 的 trust 生效')
+eq(seeded.root.partners.self.dims.cling, 66, 'seed 的 cling 生效')
+ok(existsSync(seedPath + '.applied'), 'seed 用完改名退休')
+eq(STORE.loadState().seeded, '', '第二次加载不再套用')
+eq(STORE.loadState().root.partners.self.dims.trust, 77, '第二次读到的还是 seed 值')
+
 // ── 10. 真跑：apply + 路由 + 事件 + 工具 ────────────────────────────
 section('真跑 apply')
 const sections = []
@@ -520,6 +532,46 @@ eq(tDecl.ok, true, 'decline 成功')
 ok(/好|不要|停/.test(tDecl.message) || tDecl.message.length > 0, 'decline 有回话')
 const stAfterDecl = MOD._internal.current()
 ok(stAfterDecl.pendingRespectAt > 0, 'decline 之后挂起尊重判定')
+
+// ── 工具 set：模型自己定值，但一步不许挪太多 ───────────────────────
+section('工具 set：单次幅度受限')
+const dBefore = Number(MOD._internal.current().dims.desire) || 0
+const rUp = tools[0].execute({ action: 'set', dim: 'desire', to: 100, why: '想一步到位' })
+eq(rUp.ok, true, 'set 成功')
+const dAfterUp = Number(MOD._internal.current().dims.desire) || 0
+ok(dAfterUp - dBefore <= 8.001, '一次最多涨 8', (dAfterUp - dBefore).toFixed(2))
+ok(/慢慢来/.test(rUp.message), '一步到位会被挡下并提示慢慢来')
+const rDown = tools[0].execute({ action: 'set', dim: 'desire', to: 0 })
+const dAfterDown = Number(MOD._internal.current().dims.desire) || 0
+ok(dAfterUp - dAfterDown <= 8.001, '一次最多降 8', (dAfterUp - dAfterDown).toFixed(2))
+eq(tools[0].execute({ action: 'set', dim: 'desire' }).ok, false, 'set 缺 to 要报错')
+eq(tools[0].execute({ action: 'set', dim: '不存在', to: 50 }).ok, false, 'set 不认识的维度要报错')
+
+// ── 注入瘦身：紧凑模式 ─────────────────────────────────────────────
+section('注入瘦身：紧凑模式')
+const pSlim = MOD._internal.current()
+const fullLines = CORE.renderLines(pSlim, { harmony: false })
+const slimLines = CORE.renderLines(pSlim, { harmony: false, compact: true })
+ok(slimLines.length < fullLines.length, '紧凑比完整短', slimLines.length + ' < ' + fullLines.length)
+ok(slimLines.join('\n').includes('数据：'), '紧凑模式带一行数值')
+ok(slimLines.join('\n').includes('此刻：'), '紧凑模式保留此刻意愿')
+ok(!slimLines.join('\n').includes('反馈'), '紧凑模式不再每轮发反馈规则')
+ok(!slimLines.join('\n').includes('羞耻：'), '紧凑模式不再展开羞耻两条线')
+
+// ── 衰减分层：关系不掉，身体才掉 ───────────────────────────────────
+section('衰减分层')
+const stLayer = { dims: P.blankDims(), turns: 0, tickAt: Date.now() }
+stLayer.dims.desire = 80; stLayer.dims.adore = 80; stLayer.dims.cling = 80; stLayer.dims.trust = 80
+stLayer.dims.arousal = 80; stLayer.dims.glow = 80; stLayer.dims.shame = 80
+CORE.advanceTurns(stLayer, 40, Date.now(), CORE.DEFAULTS)
+eq(Math.round(stLayer.dims.desire), 80, '欲望挂 40 轮不掉')
+eq(Math.round(stLayer.dims.adore), 80, '爱慕挂 40 轮不掉')
+eq(Math.round(stLayer.dims.cling), 80, '依恋挂 40 轮不掉')
+eq(Math.round(stLayer.dims.trust), 80, '信任挂 40 轮不掉')
+ok(stLayer.dims.arousal < 20, '唤起 40 轮掉下去', stLayer.dims.arousal.toFixed(1))
+ok(stLayer.dims.glow < 6, '余韵 40 轮掉到底', stLayer.dims.glow.toFixed(1))
+ok(stLayer.dims.shame < 10, '羞耻 40 轮掉下去', stLayer.dims.shame.toFixed(1))
+eq(P.DIMENSIONS.filter((d) => d.slow).length, 4, '四个长效维度')
 
 // 关闭开关：text 返回空
 MOD._internal.cfg = Object.assign({}, MOD._internal.cfg, { inject: false })

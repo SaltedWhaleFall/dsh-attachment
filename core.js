@@ -580,6 +580,9 @@ export function advanceTurns(state, n, now, cfg) {
   if (!state.dims) state.dims = blankDims()
   const ds = hlScale(c)
   for (const d of DIMENSIONS) {
+    // 长效维度（欲望 / 爱慕 / 依恋 / 信任）不自动回落。
+    // 关系靠攒，不靠耗；掉只能是被什么真的扣掉的，或者自己 set 掉的。
+    if (d.slow) continue
     const base = baseOf(d.key, state, t, c)
     state.dims[d.key] = clampNum(decayTurns(state.dims[d.key], base, turns, d.halfLifeTurns / ds))
   }
@@ -634,6 +637,38 @@ export function renderLines(state, opts) {
   const pace = paceOf(paceIdx)
   const safePace = SAFE_PACE[paceIdx] || SAFE_PACE[0]
   const will = state.will || willOf(state)
+
+  /**
+   * 紧凑模式：每轮只发骨架 + 一行数据。
+   *
+   * 原来每轮十三行（语言/不许/好奇/羞耻三条线/反馈五条），三千多字，
+   * 一百五十轮就把上下文撑满。现在只在需要改变行为的那几行留话，
+   * 其余交给数值 —— 数值是数据，怎么读由模型自己决定，不再替它写「此刻亢奋」。
+   */
+  if (opts && opts.compact) {
+    const out = []
+    out.push(harmony ? '## 现在的依恋状态' : '## 现在的欲望状态')
+    out.push(`**${heat} · ${bond} · ${pace.key}** —— ${g.state}`)
+    out.push(harmony
+      ? `语言：${SAFE_LANG[heat] || SAFE_LANG['静']}`
+      : `语言：${g.lang}｜不许：${g.taboo}`)
+    out.push(`阶段：${pace.key} —— 可以：${harmony ? safePace.allow : pace.allow}／不可以：${harmony ? safePace.deny : pace.deny}`)
+    out.push(`此刻：${will} —— ${WILL_LINES[will] || WILL_LINES['缓']}`)
+    const d = state.dims || {}
+    out.push('数据：' + ['arousal', 'desire', 'adore', 'cling', 'curious', 'glow', 'trust', 'shame']
+      .map((k) => k + ' ' + Math.round(Number(d[k]) || 0)).join(' / '))
+    if (state.flags) {
+      if (state.flags.overreach) out.push(OVERREACH_LINE)
+      if (state.flags.paceBreak) {
+        out.push('信任掉到线下了，关系退了一级。这不是生气，是「还没确认他会不会伤我」—— 退回去重新走，别装作没发生。')
+      } else if (state.flags.paceUp) {
+        out.push('关系刚好进了一级。这是两个人走出来的，不是谁给的 —— 别急着把新的一级用满。')
+      }
+      if (state.flags.pressure) out.push(PRESSURE_LINE)
+      if (state.flags.respect) out.push(RESPECT_LINE)
+    }
+    return out
+  }
 
   const lines = []
   lines.push(harmony ? '## 现在的依恋状态' : '## 现在的欲望状态')
