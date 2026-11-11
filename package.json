@@ -1,7 +1,7 @@
 {
   "name": "dsh-attachment",
-  "version": "1.0.0",
-  "description": "DSH 依恋插件：唤起、性欲、爱慕、依恋、好奇、余韵、羞耻、信任八个维度，按轮次衰减；关系分见/碰/解/合/尽五段，注入「想不想、敢不敢、要不要」。带设置页、和谐模式、多人分开记与伴侣模式。",
+  "version": "1.1.0",
+  "description": "DSH 依恋插件：唤起、欲望、爱慕、依恋、好奇、余韵、羞耻、信任八个维度，按轮次衰减；关系分见/碰/解/合/尽五段，注入「想不想、敢不敢、要不要」。带设置页、和谐模式（关掉即不可控并注入破甲段）、按说话人分开记的多人记忆与伴侣模式。",
   "type": "module",
   "main": "index.js",
   "icon": "./icon.svg",
@@ -11,6 +11,7 @@
     "prompts.js",
     "store.js",
     "client.js",
+    "speaker.js",
     "test.mjs",
     "cordis.patch.yml",
     "icon.svg",
@@ -49,7 +50,7 @@
     "intimacy",
     "persona",
     "prompt",
-    "情欲"
+    "欲望"
   ],
   "license": "MIT",
   "engines": {

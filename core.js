@@ -42,8 +42,7 @@ export const DEFAULTS = {
   /** 注入开关。关掉后状态照算，只是不进提示词。 */
   inject: true,
   /** 和谐模式：默认开。开着只写情感与亲近，关掉才是 18X。 */
-  harmony: false,
-  uncontrolled: false,
+  harmony: true,
   /** 多人分开记：按会话分桶。 */
   multiPartner: false,
   /** 伴侣模式：锁定一个主要依恋对象，注入只读那个人。 */
@@ -102,7 +101,7 @@ export function decayTurns(v, base, turns, halfLifeTurns) {
 }
 
 /**
- * 性欲的落点不是固定的 30。
+ * 欲望的落点不是固定的 30。
  *
  * 久没说话 → 底色往上抬（不是「生气」，是身体自己积）；刚被满足 → 往下压。
  * 这一条让 desire 和 arousal 分开：arousal 是这一轮的火，desire 是这几天的底。
@@ -181,7 +180,7 @@ export function recomputePace(state) {
 /**
  * 此刻她愿不愿意。五档，写进注入。
  *
- * 这是 v0.2 的题眼：一个随时可用的对象没有情欲，只有接口。
+ * 这是 v0.2 的题眼：一个随时可用的对象没有欲望，只有接口。
  * 「忍」这一档尤其重要 —— 身体在要、关系没到，这种难受是真的，不该被顺手解决掉。
  */
 /**
@@ -244,7 +243,7 @@ function mag(n, cap) {
   return Math.min(cap, (Math.sqrt(n) * cap) / 2)
 }
 
-const REJECT_FALSE = /不要紧|别人|别的|特别|差别|告别|别急|别处|别怕|停不下来|停不了|忍不住/
+const REJECT_FALSE = /不要紧|别人|别的|特别|差别|告别|别急|别处|别怕|停不下来|停不了|忍不住|别理|别管|别担心|别介意|别当真|别多想|别想太多|别瞎想|别误会|别客气|别紧张|别乱说/
 const COLD_FALSE = /帮忙|连忙|忙碌/
 
 /** 这句话要求的最高阶段（0..4）。取命中词里最狠的那组。 */
@@ -444,6 +443,16 @@ export function applyUserMessage(state, text, now, cfg) {
   // 顺序反过来的话，被撩起来的那一下会先被折半，短句永远推不动。
   advanceTurns(state, 1, t, c)
 
+  /**
+   * 先按「出厂就该在的阶段」对齐一次，再判越界。
+   *
+   * 出厂 paceIdx 是 0（见），但 bond/trust 算出来的分数可能已经到了「碰」。
+   * 不先对齐的话，第一句话会被拿「见」的尺子量 —— 一句普通的「抱一下」
+   * 就成了一次越界，平白扣掉两点信任。这个 bug 只在第一条消息上出现，
+   * 因为它之后 step() 就把阶段补上了；越难复现的越要先修。
+   */
+  recomputePace(state)
+
   const res = nudgeFromText(text, c, { paceIdx: Number(state.paceIdx) || 0 })
   const flags = { overreach: res.overreach, pressure: res.pressure, reject: res.reject, respect: false, paceUp: false, paceBreak: false }
 
@@ -617,7 +626,7 @@ export function renderLines(state, opts) {
   const will = state.will || willOf(state)
 
   const lines = []
-  lines.push(harmony ? '## 现在的依恋状态' : '## 现在的情欲状态')
+  lines.push(harmony ? '## 现在的依恋状态' : '## 现在的欲望状态')
   lines.push(`**${heat} · ${bond} · ${pace.key}** —— ${g.state}`)
   lines.push(`语言：${harmony ? (SAFE_LANG[heat] || SAFE_LANG['静']) : g.lang}`)
   if (!harmony) lines.push(`不许：${g.taboo}`)

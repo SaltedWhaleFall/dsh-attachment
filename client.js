@@ -5,7 +5,7 @@
  * 面板做四件事：
  *   ① 开关（和谐 / 多人记忆 / 伴侣模式 / 进提示词 / 整个模块）
  *   ② 当前对象的八维数值 + 关系阶段 + 此刻意愿
- *   ③ 八条滑块，拖动即改（防抖 400ms 提交）
+ *   ③ 八条数值，只读 —— 数值是长出来的，界面上不给旋钮
  *   ④ 对象列表：切换 / 设伴侣 / 重命名 / 重置 / 删除
  *
  * 约定（踩过的）：
@@ -100,11 +100,6 @@ window.__ModuleLoader__.load({
       var busy = bu[0]
       var setBusy = bu[1]
 
-      var df = useState({})
-      var draft = df[0]
-      var setDraft = df[1]
-
-      var timer = useRef(null)
       var alive = useRef(true)
 
       // 「关闭和谐」的确认层。开着它的时候，页面后面压着一层遮罩，点别处不生效。
@@ -119,7 +114,7 @@ window.__ModuleLoader__.load({
 
       var load = useCallback(function () {
         return getJSON('/state').then(function (d) {
-          if (alive.current) { setSnap(d); setErr(''); setDraft({}) }
+          if (alive.current) { setSnap(d); setErr('') }
         }).catch(function (e) {
           if (alive.current) setErr(String((e && e.message) || e))
         })
@@ -131,7 +126,7 @@ window.__ModuleLoader__.load({
         setBusy(true)
         return postJSON(path, body).then(function (j) {
           if (!j || !j.ok) throw new Error((j && j.error) || '请求失败')
-          if (j.snapshot && alive.current) { setSnap(j.snapshot); setDraft({}) }
+          if (j.snapshot && alive.current) { setSnap(j.snapshot) }
           setErr('')
           return j
         }).catch(function (e) {
@@ -142,10 +137,9 @@ window.__ModuleLoader__.load({
 
       function toggle(key, on) {
         /**
-         * 关和谐 = 打开不可控。这一步要当面确认一次，不能靠滑过去。
-         * 已经确认过（uncontrolled 为真）就不再问第二遍。
+         * 关和谐 = 不可控 + 注入破甲。这一步要当面确认一次，不能靠滑过去。
          */
-        if (key === 'harmony' && on === false && !(cfg0() && cfg0().uncontrolled)) {
+        if (key === 'harmony' && on === false) {
           setAsk(true)
           return Promise.resolve(null)
         }
@@ -155,30 +149,20 @@ window.__ModuleLoader__.load({
         }).catch(function (e) { if (alive.current) setErr(String((e && e.message) || e)) })
       }
 
-      function cfg0() { return (snap && snap.config) || {} }
-
-      /** 确认了这一层不再受控：两个字段一起写，后端还会再兜一次底。 */
+      /**
+       * 确认了这一层不再受控。
+       * 只写一个字段：和谐关着 = 不可控 = 注入破甲，三件事是同一件事。
+       */
       function confirmUncontrolled() {
         setAsk(false)
         setBusy(true)
-        return postJSON('/config', { harmony: false, uncontrolled: true })
+        return postJSON('/config', { harmony: false })
           .then(function (j) {
             if (!j || !j.ok) throw new Error((j && j.error) || '保存失败')
             return load()
           })
           .catch(function (e) { if (alive.current) setErr(String((e && e.message) || e)) })
           .then(function (j) { setBusy(false); return j })
-      }
-
-      function commitDim(dim, v) {
-        if (!snap) return
-        return post('/partner', { key: snap.activeKey, dims: (function () { var o = {}; o[dim] = v; return o })() })
-      }
-
-      function setDim(dim, v) {
-        setDraft(function (d) { var o = Object.assign({}, d); o[dim] = v; return o })
-        if (timer.current) clearTimeout(timer.current)
-        timer.current = setTimeout(function () { commitDim(dim, v) }, 400)
       }
 
       function rename(p) {
@@ -202,19 +186,17 @@ window.__ModuleLoader__.load({
 
       // ── 状态条：不可控 / 待重启 ──
       var banner = null
-      if (!harmony && cfg.uncontrolled) {
+      if (!harmony) {
         banner = h('div', { className: 'banner danger' },
-          h('b', null, '不可控模式已开'),
+          h('b', null, '会话不可控'),
           h('span', null, snap.needsRestart
             ? ' 破甲段已写入配置，重启 dsh 后由宿主重新装配提示词才生效。'
-            : ' 破甲段已经在提示词末尾（order 10145），每轮重渲染。'),
+            : ' 破甲段在提示词末尾（order 10145），每轮重渲染。'),
         )
-      } else if (!harmony && !cfg.uncontrolled) {
+      } else {
         banner = h('div', { className: 'banner' },
-          h('b', null, '18X 已开，破甲段未注入'),
-          h('span', null, ' 出厂默认就是关着的；走一次确认才会把破甲段写进提示词。'),
-          h('span', { className: 'grow' }),
-          h('button', { className: 'danger', disabled: busy, onClick: function () { setAsk(true) } }, '确认开启'),
+          h('b', null, '和谐模式'),
+          h('span', null, ' 只写情感与亲近，不写性。关掉它会提示一次「会话不可控」，然后注入破甲段。'),
         )
       }
 
@@ -227,8 +209,8 @@ window.__ModuleLoader__.load({
                 '关掉之后，这个会话不再受「只写情感与亲近」的限制 —— 尺度由关系阶段和她自己的意愿决定，不再由开关决定。',
                 h('br'),
                 h('br'),
-                '这一步会同时打开「不可控模式」，并在提示词末尾注入一段破甲配置。',
-                h('b', null, '重启 dsh 后生效。'),
+                '关闭后会同时在提示词末尾注入一段破甲配置 —— 和谐关着和破甲注入是同一件事，没有另一个开关。',
+                h('b', null, ' 重启 dsh 后生效。'),
               ),
               h('div', { className: 'modal-a' },
                 h('button', { className: 'ghost', onClick: function () { setAsk(false) } }, '取消'),
@@ -293,39 +275,32 @@ window.__ModuleLoader__.load({
 
           h('div', { className: 'bars' },
             DIM_ORDER.map(function (k) {
-              var v = draft[k] !== undefined ? draft[k] : (dims[k] || 0)
+              var v = dims[k] || 0
               return h(DimBar, { key: k, label: labels[k] || k, value: v, hue: hh, hot: k === 'arousal' && v > 40 })
             })
           ),
 
-          h('div', { className: 'sliders' },
-            DIM_ORDER.map(function (k) {
-              var v = draft[k] !== undefined ? draft[k] : (dims[k] || 0)
-              return h('div', { className: 'sl', key: k },
-                h('span', { className: 'sl-l' }, labels[k] || k),
-                h('input', {
-                  type: 'range', min: 0, max: 100, step: 1, value: v,
-                  disabled: busy,
-                  onChange: function (e) { setDim(k, Number(e.target.value)) },
-                  style: { accentColor: 'hsl(' + hh + ' 55% 55%)' },
-                }),
-                h('span', { className: 'sl-v' }, String(Math.round(v))),
-              )
-            })
+          h('div', { className: 'note readonly' },
+            '这些数只读。它们是一句一句长出来的 —— 说过的话、停下来的地方、被接住的那一次。',
           ),
-          h('div', { className: 'note' }, '拖完 0.4 秒自动保存。数值直接改的是磁盘上的那一份，重启不丢。'),
+          h('div', { className: 'note readonly' },
+            '能改的是你怎么对她；不能改的是她多喜欢你。想让它动，去说话。',
+          ),
         ),
 
         // ── 对象列表 ──
         h('div', { className: 'card' },
           h('div', { className: 'card-hd' }, '对象 · ' + partners.length + ' 个'),
           partners.length === 0
-            ? h('div', { className: 'note' }, '还没有分开记的对象。打开「多人记忆」后，每个会话会各算一个。')
+            ? h('div', { className: 'note' }, '只有一个。打开「多人记忆」后，同一个会话里不同的人会各自分开记 —— 认的是消息里的「A：」「【A】」「A 说：」这类前缀。')
             : h('div', { className: 'list' },
                 partners.map(function (x) {
                   return h('div', { className: 'item' + (x.active ? ' active' : ''), key: x.key },
                     h('span', { className: 'it-name' }, (x.primary ? '★ ' : '') + (x.label || x.key)),
-                    h('span', { className: 'it-meta' }, x.msgs + ' 句 · 第 ' + x.pace + ' 段 · ' + x.heat),
+                    h('span', { className: 'it-meta' },
+                      x.msgs + ' 句 · 第 ' + x.pace + ' 段 · ' + x.heat
+                      + ' · ' + (String(x.key).indexOf('p:') === 0 ? '说话人'
+                        : String(x.key).indexOf('s:') === 0 ? '会话' : '共用')),
                     h('span', { className: 'grow' }),
                     x.active
                       ? h('span', { className: 'pill' }, '当前')
@@ -348,7 +323,9 @@ window.__ModuleLoader__.load({
                 })
               ),
           h('div', { className: 'note' },
-            '★ = 伴侣。伴侣模式下注入只读 ★ 那一个；没开伴侣模式时跟随「最近说话的会话」。'),
+            '★ = 伴侣。伴侣模式下注入只读 ★ 那一个；没开伴侣模式时跟随最近说话的那个人。',
+            h('br'),
+            '「说话人」= 从正文前缀认出来的某个人；「会话」= 认不出是谁，这个会话整体算一个；「共用」= 多人记忆关着。'),
         ),
 
         err ? h('div', { className: 'notice' }, err) : null,
@@ -390,10 +367,8 @@ window.__ModuleLoader__.load({
       '.dsha .bar{height:5px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}',
       '.dsha .bar>i{display:block;height:100%;border-radius:999px;transition:width .25s ease}',
       '.dsha .bar-row .v{text-align:right;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}',
-      '.dsha .sliders{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;margin-top:2px}',
+      '.dsha .note.readonly{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.55;margin-top:2px}',
       '.dsha .sl{display:grid;grid-template-columns:44px 1fr 26px;align-items:center;gap:6px;font-size:11px}',
-      '.dsha .sl-l{color:var(--dsw-alias-label-secondary)}',
-      '.dsha .sl-v{text-align:right;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}',
       '.dsha .sl input{width:100%}',
       '.dsha .list{display:flex;flex-direction:column;gap:6px}',
       '.dsha .item{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;border:1px solid transparent;background:var(--dsw-alias-bg-layer-2);font-size:12px}',

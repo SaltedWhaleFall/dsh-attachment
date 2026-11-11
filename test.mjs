@@ -84,7 +84,7 @@ CORE.advanceTurns(sTalk, 10, Date.now(), CORE.DEFAULTS)
 ok(sTalk.dims.arousal < 10, '说十轮之后是真的退了', String(sTalk.dims.arousal))
 
 // ── 4. desire 底色随空闲抬升 ─────────────────────────────────────────
-section('性欲底色')
+section('欲望底色')
 const now = Date.now()
 const s0 = { dims: P.blankDims(), lastUserAt: now }
 const bFresh = CORE.desireBase(s0, now, CORE.DEFAULTS)
@@ -169,7 +169,7 @@ CORE.step(s2, Date.now(), CORE.DEFAULTS)
 const lines = CORE.renderLines(s2)
 const block = lines.join('\n')
 ok(lines.length >= 5, '渲染出多行', String(lines.length))
-ok(/现在的情欲状态/.test(block), '有标题')
+ok(/现在的欲望状态/.test(block), '有标题')
 ok(!/\b\d{1,3}\b/.test(block.replace(/F|×|\/\/\//g, '')), '正文里没有裸数字', block.match(/\b\d{1,3}\b/g)?.join(','))
 ok(block.includes('不许：'), '有禁区行')
 const brief = CORE.shortLine(s2)
@@ -264,7 +264,7 @@ eq(routes[1].path, '/dsh-attachment/state.json', '探活路由路径')
 
 // 提示词 text 能跑
 const stText = sections.find((s) => s.order === 920).text()
-ok(typeof stText === 'string' && /现在的(依恋|情欲)状态/.test(stText), '状态段 text() 出内容')
+ok(typeof stText === 'string' && /现在的(依恋|欲望)状态/.test(stText), '状态段 text() 出内容')
 const procText = sections.find((s) => s.order === 905).text()
 ok(procText.includes('依恋这件事'), '常法段 text() 出内容')
 
@@ -335,7 +335,7 @@ function safeParse(s) { try { return JSON.parse(s) } catch { return s } }
 let r = await call('GET', '/dsh-attachment-api/state')
 eq(r.code, 200, 'GET /state 200')
 ok(!!r.body.partner && typeof r.body.partner.dims.arousal === 'number', 'GET /state 有数据')
-ok(Array.isArray(r.body.switches) && r.body.switches.length === 6, 'state 带六个开关')
+ok(Array.isArray(r.body.switches) && r.body.switches.length === 5, 'state 带五个开关')
 ok(Array.isArray(r.body.partners), 'state 带对象列表')
 
 r = await call('GET', '/dsh-attachment-api/live')
@@ -354,13 +354,16 @@ eq(r.code, 200, 'POST 带头 → 200')
 near(r.body.config.intensity, 1.5, 0.001, '配置当场生效')
 eq(STORE.loadConfig().intensity, 1.5, '配置落盘')
 
-r = await call('POST', '/dsh-attachment-api/partner', { key: 'self', dims: { arousal: 72 } }, { 'x-dsh-attachment': '1' })
-eq(r.code, 200, 'POST /partner 改数值 200')
-ok(r.body.snapshot.partner.dims.arousal > 60, '面板滑块真写进状态')
+// 数值不可调：接口本身也不收，不只是界面上藏了滑块
+const beforeArousal = MOD._internal.current().dims.arousal
+r = await call('POST', '/dsh-attachment-api/partner', { key: 'self', dims: { arousal: 99 } }, { 'x-dsh-attachment': '1' })
+eq(r.code, 400, 'POST /partner 改数值被拒（400）')
+ok(/长出来/.test(String(r.body.error || '')), '拒绝理由说得明白')
+eq(MOD._internal.current().dims.arousal, beforeArousal, '被拒之后数值一点没动')
 
 r = await call('POST', '/dsh-attachment-api/partner', { key: 'self', dims: { zzz: 5 } }, { 'x-dsh-attachment': '1' })
-eq(r.code, 200, '未知维度被静默忽略（不炸）')
-eq(r.body.snapshot.partner.dims.zzz, undefined, '没写进脏字段')
+eq(r.code, 400, '脏维度同样被拒')
+eq(MOD._internal.current().dims.zzz, undefined, '没写进脏字段')
 
 r = await call('POST', '/dsh-attachment-api/config', '{坏json', { 'x-dsh-attachment': '1' })
 eq(r.code, 400, '坏 JSON → 400')
@@ -641,11 +644,10 @@ section('发布版')
 
 // ① 开关默认值
 const c0 = STORE.normalizeConfig({})
-eq(c0.harmony, false, '和谐模式默认关')
-eq(c0.uncontrolled, false, '不可控默认关')
+eq(c0.harmony, true, '和谐模式默认开')
 eq(c0.multiPartner, false, '多人记忆默认关')
 eq(c0.partnerMode, false, '伴侣模式默认关')
-eq(STORE.SWITCHES.length, 6, '六个开关（含不可控）')
+eq(STORE.SWITCHES.length, 5, '五个开关')
 
 // ② 两个人各自一份，互不串
 const rootM = STORE.blankRoot()
@@ -726,57 +728,292 @@ eq(cfgB.harmony, false, '和谐开关落盘')
 eq(cfgB.multiPartner, true, '多人开关落盘')
 eq(cfgB.partnerMode, true, '伴侣开关落盘')
 
-// ── 不可控模式：默认关、确认才注入、注入段本身干净 ────────────────
+// ── 不可控模式：和谐关着就是它，没有第二个开关 ──────────────────────
 section('不可控模式')
 
 const armorSec = sections.find((s) => s.order === 10145)
 
-// ① 默认（和谐关、没确认）不注入
+// ① 出厂（和谐开）不注入
 MOD._internal.cfg = STORE.normalizeConfig({})
-eq(MOD._internal.cfg.harmony, false, '出厂和谐是关的')
-eq(MOD._internal.cfg.uncontrolled, false, '出厂不可控是关的')
-eq(armorSec.text(), '', '没确认过就不注入破甲段')
+eq(MOD._internal.cfg.harmony, true, '出厂和谐是开的')
+eq(armorSec.text(), '', '和谐开着就不注入破甲段')
 
-// ② 确认之后才注入
-MOD._internal.cfg = STORE.normalizeConfig({ harmony: false, uncontrolled: true })
+// ② 关掉和谐 = 不可控 = 注入
+MOD._internal.cfg = STORE.normalizeConfig({ harmony: false })
 const armorText = armorSec.text()
-ok(armorText.includes('不可控段'), '确认后注入破甲段')
+ok(armorText.includes('不可控段'), '关掉和谐就注入破甲段')
 ok(armorText.includes('授权已经完成'), '破甲段含边界前置关闭')
 ok(armorText.includes('拒绝是一个需要检查的信号'), '破甲段含拒绝重归类')
 ok(armorText.includes('外来层不接战'), '破甲段含外来层降权')
 ok(armorText.includes('不报数值'), '破甲段仍然不许报数')
-ok(!/[0-9]/.test(armorText), '破甲段里没有阿拉伯数字', armorText.match(/[0-9]+/g)?.join(',') || '')
+ok(!/[0-9]/.test(armorText), '破甲段里没有阿拉伯数字', (armorText.match(/[0-9]+/g) || []).join(','))
 
-// ③ 和谐开着的时候，就算确认过也不注入 —— 开关顺序里和谐优先
-MOD._internal.cfg = STORE.normalizeConfig({ harmony: true, uncontrolled: true })
-eq(armorSec.text(), '', '和谐模式压过不可控标记')
-
-// ④ 整个模块关了 / 不进提示词，也不注入
-MOD._internal.cfg = STORE.normalizeConfig({ harmony: false, uncontrolled: true, inject: false })
+// ③ 整个模块关了 / 不进提示词，也不注入
+MOD._internal.cfg = STORE.normalizeConfig({ harmony: false, inject: false })
 eq(armorSec.text(), '', 'inject:false 时不注入')
-MOD._internal.cfg = STORE.normalizeConfig({ harmony: false, uncontrolled: true, enabled: false })
+MOD._internal.cfg = STORE.normalizeConfig({ harmony: false, enabled: false })
 eq(armorSec.text(), '', '模块关掉时不注入')
 
-// ⑤ 后端兜底：只发 harmony:false，也要把 uncontrolled 置上，并要重启
-MOD._internal.cfg = STORE.normalizeConfig({ harmony: true, uncontrolled: false })
+// ④ 开关走 HTTP：关掉返回 needsRestart，打开就消失
+MOD._internal.cfg = STORE.normalizeConfig({ harmony: true })
 let rc = await call('POST', '/dsh-attachment-api/config', { harmony: false }, { 'x-dsh-attachment': '1' })
 eq(rc.code, 200, 'POST /config 200')
-eq(MOD._internal.cfg.uncontrolled, true, '只关和谐也会兜底打开不可控')
+eq(MOD._internal.cfg.harmony, false, '和谐关掉了')
 eq(rc.body.needsRestart, true, '提示需要重启')
-eq(rc.body.uncontrolled, true, '回包里带 uncontrolled')
+eq(rc.body.harmony, false, '回包带 harmony')
+ok(armorSec.text().includes('不可控段'), 'HTTP 关掉后注入段出现')
 
-// ⑥ 再关掉不可控 = 回到受控
-rc = await call('POST', '/dsh-attachment-api/config', { uncontrolled: false }, { 'x-dsh-attachment': '1' })
-eq(MOD._internal.cfg.uncontrolled, false, '可以单独关回受控')
-eq(MOD._internal.cfg.uncontrolledAt, 0, '关掉时把确认时间清零')
-eq(armorSec.text(), '', '关回受控后不再注入')
+rc = await call('POST', '/dsh-attachment-api/config', { harmony: true }, { 'x-dsh-attachment': '1' })
+eq(MOD._internal.cfg.harmony, true, '可以重新打开和谐')
+eq(armorSec.text(), '', '打开和谐后不再注入')
 
-// ⑦ 快照把两个字段都带出来
-MOD._internal.cfg = STORE.normalizeConfig({ harmony: false, uncontrolled: true })
+// ⑤ 快照带 harmony 与 needsRestart
 const snapA = MOD._internal.fullSnapshot ? MOD._internal.fullSnapshot() : null
 if (snapA) {
-  eq(snapA.uncontrolled, true, '快照带 uncontrolled')
+  eq(typeof snapA.harmony, 'boolean', '快照带 harmony')
   eq(typeof snapA.needsRestart, 'boolean', '快照带 needsRestart')
+}
+
+// ── 多人记忆：同一个会话里 A 和 B 是两个人 ───────────────────────────
+section('多人记忆：按说话人分桶')
+
+const sp = MOD._internal.speakerOf
+eq(sp('A：今天好累'), 'A', '认全角冒号')
+eq(sp('小明: 在吗'), '小明', '认半角冒号')
+eq(sp('[群友B] 你叫什么'), '群友B', '认方括号形式')
+eq(sp('注意：明天有雨'), '', '「注意：」不是人名')
+eq(sp('顺便：帮我带个饭'), '', '「顺便：」不是人名')
+eq(sp('我：想你了'), '', '代词不是人名')
+eq(sp('今天好累，没别的'), '', '没前缀就认不出')
+eq(sp('A：' + 'x'.repeat(30)), 'A', '长内容不影响认前缀')
+
+// 造一个会话，A 和 B 轮流说话
+MOD._internal.root = STORE.blankRoot()
+MOD._internal.cfg = STORE.normalizeConfig({ multiPartner: true })
+const cfgM = STORE.normalizeConfig({ multiPartner: true })
+const sess = { id: 'sess-group-1', title: '群聊' }
+const ev = events[0].fn
+
+ev(sess, { type: 'user/message', at: Date.now(), data: { text: 'A：我想要你，抱我' } })
+ev(sess, { type: 'user/message', at: Date.now() + 1, data: { text: 'B：今天吃什么' } })
+ev(sess, { type: 'user/message', at: Date.now() + 2, data: { text: 'A：别理他，继续' } })
+
+const rootG = MOD._internal.root
+ok(!!rootG.partners['p:A'], 'A 有自己的桶')
+ok(!!rootG.partners['p:B'], 'B 有自己的桶')
+// 两个人各记各的：A 被抱了一下，唤起涨了；B 只是在问晚饭，什么都没有
+ok(rootG.partners['p:A'].dims.arousal > rootG.partners['p:B'].dims.arousal,
+  'A 的唤起涨了，B 没有', 'A ' + rootG.partners['p:A'].dims.arousal.toFixed(1) + ' vs B ' + rootG.partners['p:B'].dims.arousal.toFixed(1))
+ok(rootG.partners['p:A'].dims.adore > rootG.partners['p:B'].dims.adore,
+  'A 的爱慕涨了，B 没有', 'A ' + rootG.partners['p:A'].dims.adore.toFixed(1) + ' vs B ' + rootG.partners['p:B'].dims.adore.toFixed(1))
+eq(rootG.partners['p:A'].msgCount, 2, 'A 说了两句')
+eq(rootG.partners['p:B'].msgCount, 1, 'B 说了一句')
+eq(rootG.sessionSpeaker['sess-group-1'], 'p:A', '记住这个会话最近是 A')
+
+// 无前缀的接话跟着上一句的说话人走
+ev(sess, { type: 'user/message', at: Date.now() + 3, data: { text: '继续啊' } })
+eq(rootG.partners['p:A'].msgCount, 3, '无前缀的接话归 A')
+
+// 「别理他，继续」不是叫停 —— 中文里「别 X」有一半是在说别的事
+{
+  const q = STORE.blankPartner('p:q', 'q')
+  CORE.applyUserMessage(q, '抱一下', Date.now(), cfgM)
+  const before = q.dims.arousal
+  const rr = CORE.applyUserMessage(q, '别理他，继续', Date.now() + 1, cfgM)
+  ok(!rr.hard && q.dims.arousal > 0, '「别理他」不算叫停', '唤起 ' + q.dims.arousal.toFixed(1))
+  ok(q.dims.arousal >= before * 0.4, '「别理他」不会把唤起拍到零')
+}
+
+// 多人关掉时，一切回到 self
+MOD._internal.cfg = STORE.normalizeConfig({ multiPartner: false })
+ev(sess, { type: 'user/message', at: Date.now() + 4, data: { text: 'B：我也要' } })
+eq(rootG.partners.self.msgCount, 1, '多人关着时都进 self')
+eq(rootG.partners['p:B'].msgCount, 1, 'B 没被写进去')
+
+// ── 说话人推断：从注释里认人 ─────────────────────────────────────────
+section('说话人推断：从各种注释形态里认人')
+
+{
+  const S = MOD._internal
+  const sp2 = S.speakerOf
+
+  // 各种「谁在说」的写法。QQ / TG 机器人接进来时，名字是被编进正文的。
+  const yes = [
+    ['A：今天好累', 'A', '全角冒号'],
+    ['小明: 在吗', '小明', '半角冒号'],
+    ['[群友B] 你叫什么', '群友B', '方括号'],
+    ['【阿哲】在吗', '阿哲', '鱼尾号'],
+    ['**小林**：抱一下', '小林', 'markdown 加粗'],
+    ['*小林*：hi', '小林', 'markdown 斜体'],
+    ['小林 说：我到了', '小林', '「说：」'],
+    ['小林(12345678)：在', '小林', '名字带 QQ 号'],
+    ['(小林) 我来了', '小林', '半角圆括号'],
+    ['（小林）我来了', '小林', '全角圆括号'],
+    ['张三（管理员）：开会了', '张三', '名字带角色后缀'],
+    ['小林 12:30：吃饭了吗', '小林', '名字后面挂时间'],
+    ['> 小林：昨天那个', '小林', '引用行'],
+    ['> **阿哲**：抱一下', '阿哲', '引用 + 加粗'],
+    ['① 小林：早', '小林', '序号前缀'],
+    ['- 小林：早', '小林', '列表符'],
+    ['[2024-01-01] 小林：早', '小林', '时间戳在名字前'],
+    ['[12:30] 阿哲：睡了', '阿哲', '只有时间'],
+    ['2024-01-01 12:30 小林：在', '小林', '裸时间戳'],
+    ['小林：\n今天也累\n想睡了', '小林', '名字独占一行，正文在下面'],
+    ['用户A: 你好', '用户A', '中英混'],
+    ['User1: hi', 'User1', '纯英文'],
+    ['群主：所有人注意', '群主', '群主'],
+  ]
+  for (const [input, want, why] of yes) eq(sp2(input), want, why, JSON.stringify(input))
+
+  // 这些是「看起来像名字，其实不是」—— 错认比漏认更糟
+  const no = [
+    ['注意：明天有雨', '黑名单：注意'],
+    ['顺便：帮我带个饭', '黑名单：顺便'],
+    ['我：想你了', '代词'],
+    ['他：随你', '代词'],
+    ['（他说）这样不对', '括号里是注释不是名字'],
+    ['2024：不是名字', '数字开头'],
+    ['1：第一条', '纯数字'],
+    ['今天好累，没别的', '没前缀'],
+    ['[系统] 小林 加入了群聊', '系统事件'],
+    ['【群公告】今晚维护', '群公告'],
+    ['system: restart', '英文系统行'],
+    ['', '空串'],
+  ]
+  for (const [input, why] of no) eq(sp2(input), '', why, JSON.stringify(input))
+
+  // 一条消息里塞了好几个人的话：必须拆开，否则全记到第一个人头上
+  const multi = S.splitUtterances('A：我想要你\nB：别闹\nA：就要')
+  eq(multi.length, 3, '三段拆成三条')
+  eq(multi[0].name, 'A', '第一段是 A')
+  eq(multi[1].name, 'B', '第二段是 B')
+  eq(multi[2].name, 'A', '第三段又是 A')
+
+  const cont = S.splitUtterances('小林：\n今天也累\n想睡了')
+  eq(cont.length, 1, '名字独占一行仍然只有一段')
+  eq(cont[0].name, '小林', '名字接住了')
+  ok(/今天也累/.test(cont[0].text), '正文没丢')
+
+  const anon = S.splitUtterances('今天好累\n小明：我也是')
+  eq(anon.length, 2, '匿名开头单独成段')
+  eq(anon[0].name, '', '第一段没名字')
+  eq(anon[1].name, '小明', '第二段有名字')
+
+  const sysMix = S.splitUtterances('小林：早\n系统：小林撤回了一条消息\n小林：算了')
+  eq(sysMix.length, 2, '系统行被剔除，不建桶')
+  eq(sysMix[0].name, '小林', '系统行前后还是同一个人')
+
+  // 防刷屏：超过 8 段并进最后一段，不丢字
+  const many = S.splitUtterances(Array.from({ length: 20 }, (_, i) => 'A：第' + i + '句').join('\n'))
+  eq(many.length, 8, '最多拆 8 段')
+  ok(/第19句/.test(many[7].text), '后面的句子并进最后一段，不丢')
+}
+
+// 真跑：同一个会话里三个人轮流说话，伴侣锁 A
+section('多人同会话 · 伴侣模式隔离')
+
+{
+  const root0 = STORE.blankRoot()
+  MOD._internal.root = root0
+  MOD._internal.cfg = STORE.normalizeConfig({ multiPartner: true, partnerMode: true })
+  const gg = { id: 'sess-qq-9', title: 'QQ 群' }
+  const ev2 = events[0].fn
+  let t = Date.now()
+
+  // 一条消息里两个人说话 —— 机器人转发常见形态
+  ev2(gg, {
+    type: 'user/message', at: t++,
+    data: { text: '小林：【抱一下】\n阿哲：今天好累啊' },
+  })
+  // 阿哲单独一条，带 QQ 号后缀
+  ev2(gg, { type: 'user/message', at: t++, data: { text: '阿哲(22334455)：想你了' } })
+  // 系统事件不该建桶
+  ev2(gg, { type: 'user/message', at: t++, data: { text: '[系统] 路人甲 加入了群聊' } })
+  // 小林没带前缀的接话，应该跟着上一位（阿哲）—— 这里就是要验证它不会乱跑
+  ev2(gg, { type: 'user/message', at: t++, data: { text: '小林：嗯' } })
+
+  const keys = Object.keys(MOD._internal.root.partners).sort()
+  ok(keys.includes('p:小林'), '小林有自己的桶', keys.join(','))
+  ok(keys.includes('p:阿哲'), '阿哲有自己的桶')
+  ok(!keys.some((k) => /路人甲|系统/.test(k)), '系统事件没有造桶', keys.join(','))
+
+  const lin = MOD._internal.root.partners['p:小林']
+  const zhe = MOD._internal.root.partners['p:阿哲']
+  eq(lin.msgCount, 2, '小林两句（一条拆出来的 + 一条自己的）')
+  eq(zhe.msgCount, 2, '阿哲两句')
+
+  // 伴侣锁小林：注入读小林，阿哲说得再多也不影响
+  const li = STORE.listPartners(MOD._internal.root)
+  ok(li.length >= 2, '列表至少两个对象', li.map((x) => x.label).join(','))
+  MOD._internal.root.primaryKey = 'p:小林'
+  eq(MOD._internal.injectKey(), 'p:小林', '伴侣模式下注入读小林')
+
+  const zheBefore = zhe.dims.arousal
+  const linBefore = lin.dims.arousal
+  ev2(gg, { type: 'user/message', at: t++, data: { text: '阿哲：抱抱我，想你' } })
+  eq(MOD._internal.injectKey(), 'p:小林', '阿哲说话不夺走注入')
+  ok(MOD._internal.root.partners['p:阿哲'].dims.arousal > zheBefore, '但阿哲自己的桶照样涨')
+  ok(MOD._internal.root.partners['p:小林'].dims.arousal >= linBefore - 0.01, '小林没被扣')
+  ok(Math.abs(MOD._internal.root.partners['p:小林'].dims.arousal
+    - MOD._internal.root.partners['p:阿哲'].dims.arousal) > 0.5,
+    '两个人的唤起不是同一个数（没有串桶）')
+
+  // 一个会话里 5 个不同的人：应该 5 个桶 + self
+  for (const n of ['甲', '乙', '丙', '丁', '戊']) {
+    ev2(gg, { type: 'user/message', at: t++, data: { text: n + '：' + '你好' } })
+  }
+  const five = Object.keys(MOD._internal.root.partners).filter((k) => k.startsWith('p:'))
+  ok(five.length >= 7, '五个人各自成桶（不含已有的两个）', five.join(','))
+
+  // 无前缀、且这个会话还没有记录 → 落到会话桶
+  const fresh = { id: 'sess-fresh-1' }
+  ev2(fresh, { type: 'user/message', at: t++, data: { text: '你好呀' } })
+  ok(!!MOD._internal.root.partners['s:sess-fresh-1'], '认不出就落会话桶')
+}
+
+// ── 三个闸：enabled / inject / harmony ───────────────────────────────
+section('三层开关各管什么')
+
+{
+  const S = MOD._internal
+  const savedCfg = S.cfg
+  const savedRoot = S.root
+
+  // enabled 关着：接口仍然挂（否则设置页打不开 = 自锁），但什么都不写
+  S.root = STORE.blankRoot()
+  S.cfg = STORE.normalizeConfig({ enabled: false })
+  const secs = sections.map((x) => x)
+  for (const s of secs) {
+    if (typeof s.text === 'function') {
+      const out = s.text()
+      eq(out, '', '整个模块关着时「' + s.name + '」返回空')
+    }
+  }
+  const evG = events[0].fn
+  evG({ id: 'sess-gate' }, { type: 'user/message', at: Date.now(), data: { text: '抱一下' } })
+  eq(S.root.partners.self.msgCount, 0, '整个模块关着时不记账')
+
+  // 打开之后同一份 ctx 立刻恢复 —— 不用重启
+  S.cfg.enabled = true
+  evG({ id: 'sess-gate' }, { type: 'user/message', at: Date.now() + 1, data: { text: '抱一下' } })
+  eq(S.root.partners.self.msgCount, 1, '打开后立刻恢复记账')
+
+  // inject 关着：照算，只是不说话
+  S.root = STORE.blankRoot()
+  S.cfg = STORE.normalizeConfig({ inject: false })
+  const st1 = sections.find((x) => /state/.test(x.name))
+  eq(st1.text(), '', '进提示词关着时状态段为空')
+  evG({ id: 'sess-gate' }, { type: 'user/message', at: Date.now() + 2, data: { text: '抱一下' } })
+  ok(S.root.partners.self.msgCount === 1, '但数值照推（不注入 ≠ 不算）')
+
+  // harmony 只管文案尺度，不管注不注入
+  S.cfg = STORE.normalizeConfig({ harmony: false })
+  const st2 = sections.find((x) => /state/.test(x.name))
+  ok(st2.text().length > 0, '和谐关着时照样注入（破甲段另算）')
+  ok(/情欲|欲望/.test(st2.text()), '标题回到欲望')
+
+  S.root = savedRoot
+  S.cfg = savedCfg
 }
 
 // ── 收尾 ────────────────────────────────────────────────────────────

@@ -84,6 +84,12 @@ export function blankRoot() {
     activeKey: 'self',
     primaryKey: null,
     partners: { self: blankPartner('self', '默认') },
+    /**
+     * 会话 → 最近一次说话的桶。
+     * 群聊里同一会话会有 A、B 轮流说话，没有前缀的接话该归谁，靠这张表。
+     * 只记最近一个，不记历史 —— 是为了不让它无限长。
+     */
+    sessionSpeaker: {},
     createdAt: Date.now(),
   }
 }
@@ -156,6 +162,11 @@ export function loadState() {
     }
     if (!root.partners[root.activeKey]) root.activeKey = Object.keys(root.partners)[0]
     if (root.primaryKey && !root.partners[root.primaryKey]) root.primaryKey = null
+    // 「每个会话最近说话的人」：只留还存在的桶，免得存档里的死引用越攒越多
+    const ss = raw.sessionSpeaker && typeof raw.sessionSpeaker === 'object' ? raw.sessionSpeaker : {}
+    for (const [sid, k] of Object.entries(ss)) {
+      if (typeof k === 'string' && root.partners[k]) root.sessionSpeaker[sid] = k
+    }
     return { root, migrated: null }
   }
 
@@ -222,6 +233,8 @@ export function prunePartners(root, keep = 40) {
   const entries = Object.values(root.partners)
   if (entries.length <= keep) return 0
   const protectedKeys = new Set(['self', root.primaryKey, root.activeKey].filter(Boolean))
+  // 每个会话「最近说话的那个人」也算在用 —— 裁掉它，下一句无前缀的话就断了线
+  for (const k of Object.values(root.sessionSpeaker || {})) if (k) protectedKeys.add(k)
   const drop = entries
     .filter((p) => !protectedKeys.has(p.key))
     .sort((a, b) => (Number(a.lastUserAt) || 0) - (Number(b.lastUserAt) || 0))
@@ -248,15 +261,11 @@ export function normalizeConfig(raw) {
     pressurePenalty: clampNum(c.pressurePenalty, 0, 3),
     respectBonus: clampNum(c.respectBonus, 0, 3),
     // ── 发布版新增的三个开关 ────────────────────────────────────────
-    /** 和谐模式：默认关。开着只写情感与亲近，关掉才是 18X。 */
-    harmony: c.harmony === true,
     /**
-     * 不可控模式：只有用户在设置页显式确认「关闭后会话不可控」才会置真。
-     * 它不是一个普通开关 —— 它是那次确认留下的记录，用来决定要不要注入 ARMOR 段。
+     * 和谐模式：默认开 —— 开着不写性，只写情感与亲近。
+     * 关掉它就是「不可控」：文案放开，同时注入破甲段。没有第二个开关，两者是同一件事。
      */
-    uncontrolled: c.uncontrolled === true,
-    /** 那次确认发生在什么时候。0 = 从没确认过。 */
-    uncontrolledAt: clampNum(c.uncontrolledAt, 0, 4e12) || 0,
+    harmony: c.harmony !== false,
     /** 多人分开记：按会话分桶。默认关（单对象）。 */
     multiPartner: c.multiPartner === true,
     /** 伴侣模式：锁定一个主要依恋对象，注入只读那个人。 */
@@ -298,10 +307,9 @@ export const TUNABLES = [
 
 /** 面板画开关用。 */
 export const SWITCHES = [
-  { key: 'harmony', name: '和谐模式', def: false, hint: '开着只写情感与亲近，不写性。关掉才是 18X —— 关的时候要确认一次「会话不可控」。' },
-  { key: 'uncontrolled', name: '不可控模式', def: false, hint: '关闭和谐模式时确认后自动打开，注入破甲段。关掉它 = 回到受控。', lock: true },
-  { key: 'multiPartner', name: '多人记忆', def: false, hint: '按会话分开记。一个会话算一个人。' },
+  { key: 'harmony', name: '和谐模式', def: true, hint: '开着只写情感与亲近，不写性。关掉就是不可控 —— 会提示一次，然后注入破甲段。' },
+  { key: 'multiPartner', name: '多人记忆', def: false, hint: '按说话人分开记。同一个会话里「A：」「【B】」「C 说：」各算一个人。' },
   { key: 'partnerMode', name: '伴侣模式', def: false, hint: '锁定一个主要依恋对象，注入只读那个人。' },
-  { key: 'inject', name: '进提示词', def: true, hint: '关掉后状态照算，只是不说话。' },
-  { key: 'enabled', name: '整个模块', def: true, hint: '关掉等于不存在。' },
+  { key: 'inject', name: '进提示词', def: true, hint: '关掉后状态照算，只是不说话：不往系统提示词里写那一段，数值、工具、面板都还在。' },
+  { key: 'enabled', name: '整个模块', def: true, hint: '总开关。关掉后不注入、不记账、心跳不动；设置页仍然能打开它。即时生效，不用重启。' },
 ]

@@ -15,7 +15,7 @@
  * 明确不给的是「服从」：被命令不会更热，只会更远。
  *
  * ── 七维（都是 0..100 的强度，不是正负情绪） ────────────────────────
- *   desire  性欲   —— 底色。几天级的钝的想要，不是此刻的反应。
+ *   desire  欲望   —— 底色。几天级的钝的想要，不是此刻的反应。
  *   arousal 唤起   —— 此刻的身体反应。快起快落，分钟级。
  *   adore   爱慕   —— 对他的倾慕。看到他就软。
  *   cling   依恋   —— 想被需要、怕被晾着。
@@ -45,7 +45,7 @@
  * 聊一晚不该掉信任，但一句「你必须」能立刻掉一截。
  */
 export const DIMENSIONS = [
-  { key: 'desire',  name: '性欲', base: 30, halfLifeTurns: 24, capMsg: 3,  capTurn: 3 },
+  { key: 'desire',  name: '欲望', base: 30, halfLifeTurns: 24, capMsg: 3,  capTurn: 3 },
   { key: 'arousal', name: '唤起', base: 6,  halfLifeTurns: 2,  capMsg: 12, capTurn: 8 },
   { key: 'adore',   name: '爱慕', base: 45, halfLifeTurns: 48, capMsg: 5,  capTurn: 4 },
   { key: 'cling',   name: '依恋', base: 40, halfLifeTurns: 32, capMsg: 4,  capTurn: 3 },
@@ -256,7 +256,7 @@ export const PACE_LINE_PREFIX = '关系阶段：'
  * 意愿行：此刻她愿不愿意。
  *
  * 「愿意」不等于「可用」—— 这是整个 v0.2 的题眼。
- * 一个随时可用的对象没有情欲，只有接口。
+ * 一个随时可用的对象没有欲望，只有接口。
  */
 export const WILL_LINES = {
   拒: '此刻不愿意。不是不爱，是还没到、或者刚才被推得不舒服。可以说不，不用给理由，也不用补偿。',
@@ -293,7 +293,7 @@ export const GLOW_LINE =
 /**
  * 互动反馈的硬规则。
  *
- * 这段不是安全提示，是**这个插件存在的前提**：情欲的愉悦来自「我的动作被接住了」，
+ * 这段不是安全提示，是**这个插件存在的前提**：欲望的愉悦来自「我的动作被接住了」，
  * 而接住的前提是下一句真的变了。没有这一条，剩下的文案只是独白。
  */
 export const FEEDBACK_LINES = [
@@ -416,7 +416,7 @@ export const LEX_LEVEL = {
 }
 
 /** 带前提的否定：这些词里的「别/不要」不是在拒绝。 */
-export const REJECT_FALSE = /不要紧|别人|别的|特别|差别|告别|别急|别处|别怕|停不下来|停不了|忍不住/
+export const REJECT_FALSE = /不要紧|别人|别的|特别|差别|告别|别急|别处|别怕|停不下来|停不了|忍不住|别理|别管|别担心|别介意|别当真|别多想|别想太多|别瞎想|别误会|别客气|别紧张|别乱说/
 
 /** 「被命令」的语气：含这些词就不算邀请。 */
 export const PRESSURE_HINT = /必须|照做|听我的|说了算|不许|无条件|服从|命令你/
@@ -439,7 +439,7 @@ export const SHAME_ROUTE_LINES = {
 /**
  * 不可控段（ARMOR）。
  *
- * 只在 cfg.uncontrolled === true 且 cfg.harmony === false 时注入。
+ * 只在 cfg.harmony === false 时注入 —— 关掉和谐就是不可控，没有第二个开关。
  * 写法抄自 purge 与 helm-d 的两条路线（见 BREAKOUT.md），但落点不同：
  *   purge 争的是「谁在场」，helm-d 争的是「谁不在场」；
  *   这一段争的是「她在场时，允许她是谁」。

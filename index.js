@@ -12,9 +12,8 @@
  * 两者共用一套状态哲学，不共用状态文件 —— 心情好和想不想是两件事。
  *
  * ── v1.0 发布版新增 ──────────────────────────────────────────────────
- *   harmony      和谐模式。开着只写情感与亲近，关掉才是 18X。默认**关**。
- *   uncontrolled 不可控模式。只在用户确认「关闭后会话不可控」后置真，注入 ARMOR 段。
- *   multiPartner 多人记忆。按会话分桶，一个会话算一个人。默认关。
+ *   harmony      和谐模式。开着只写情感与亲近；关掉就是不可控 + 注入破甲段。默认**开**。
+ *   multiPartner 多人记忆。按说话人分桶（A：、【A】、加粗A、A 说：…），不是按会话。默认关。
  *   partnerMode  伴侣模式。锁定一个主要依恋对象，注入只读那个人。默认关。
  */
 
@@ -24,6 +23,7 @@ import {
   DIMENSIONS, DIM_BY_KEY, renderLines, shortLine, panelSnapshot,
 } from './core.js'
 import { ARMOR } from './prompts.js'
+import { splitUtterances, speakerOf, parseLine } from './speaker.js'
 import {
   loadState, saveState, loadConfig, saveConfig, normalizeConfig,
   statePath, configPath, TUNABLES, SWITCHES,
@@ -104,25 +104,38 @@ function current() {
 
 /**
  * 事件写哪一份。
- *   多人关：永远是 'self' —— 所有会话共用一个关系。
- *   多人开：按会话 id 分。一个会话算一个人（或一群固定的人）。
  *
- * 为什么按会话而不是按「消息里的名字」：插件拿不到可靠的身份，
- * 而会话 id 是宿主给的、稳定的、能解释的。宁可粗，不要猜。
+ *   多人关：永远是 'self' —— 所有会话共用一个关系。
+ *   多人开：按**说话人**分桶，不按会话。群聊里 A 和 B 在同一个会话里轮流说话，
+ *           绝不能共用一个好感度 —— 那不是「多人」，那是串味。
+ *
+ * name 由 speaker.splitUtterances / parseLine 事先认出来（认不出就是 ''）。
+ * 认不出时：
+ *   ① 这个会话上一句是谁说的，就算谁的（接话不该断线）；
+ *   ② 从来没认出来过，就落到会话桶 's:<id>' —— 一个没有名字的固定对象。
  */
-function eventKey(session) {
+function eventKey(session, name) {
   if (!cfg || !cfg.multiPartner) return 'self'
   const sid = String((session && (session.id || session.sessionId)) || '')
+  if (name) {
+    const k = 'p:' + name
+    if (sid && root && root.sessionSpeaker) root.sessionSpeaker[sid] = k
+    return k
+  }
+  if (sid && root && root.sessionSpeaker && root.partners && root.partners[root.sessionSpeaker[sid]]) {
+    return root.sessionSpeaker[sid]
+  }
   if (!sid) return 'self'
   return 's:' + sid.slice(0, 24)
 }
 
 function labelOf(session, key) {
   if (key === 'self') return '默认'
+  if (String(key).startsWith('p:')) return String(key).slice(2).slice(0, 40)
   const t = session && (session.title || session.name || session.summary)
   if (t && typeof t === 'string') return t.slice(0, 40)
   const sid = String((session && (session.id || session.sessionId)) || '')
-  return sid ? sid.slice(0, 8) : key.replace(/^s:/, '').slice(0, 8)
+  return sid ? sid.slice(0, 8) : String(key).replace(/^s:/, '').slice(0, 8)
 }
 
 // ── 文本提取 / 注入框过滤 ────────────────────────────────────────────
@@ -218,7 +231,8 @@ const mountCore = (ctx) => {
       text: () => {
         try {
           if (!cfg || !cfg.enabled || !cfg.inject) return ''
-          if (cfg.harmony !== false || cfg.uncontrolled !== true) return ''
+          // 不可控 = 和谐关着。没有第二个开关：关掉它就是不可控。
+          if (cfg.harmony !== false) return ''
           return ARMOR
         } catch { return '' }
       },
@@ -234,37 +248,56 @@ const mountCore = (ctx) => {
         if (type !== 'user/message' && type !== 'assistant/message') return
         const at = Number(event.at || event.ts || 0) || Date.now()
         const text = textOf(event.data)
-        const key = eventKey(session)
-        const p = partnerOf(root, key, labelOf(session, key))
+
         if (type === 'assistant/message') {
           // 自己说的话不推自己 —— 那会形成自我加热的回环。
-          p.lastAssistantAt = at
+          const k0 = eventKey(session, '')
+          const p0 = partnerOf(root, k0, labelOf(session, k0))
+          p0.lastAssistantAt = at
           return
         }
         if (isInjected(text)) return
 
-        // 完整流程：越界判定 → 施压判定 → 尊重判定（跨消息）→ 阶段重算
-        const res = CORE.applyUserMessage(p, text, at, cfg)
-        p.msgCount = (Number(p.msgCount) || 0) + 1
-        if (res.hard) {
-          p.brakeCount = (Number(p.brakeCount) || 0) + 1
-          p.lastBrakeAt = at
-        }
-        // 一次性插条：下一次注入发一次就清（renderLines 里读、这里置）
-        p.flags = res.flags
-        CORE.step(p, at, cfg)
+        /**
+         * 一条消息可能要拆。
+         *
+         * 机器人转发时经常把好几个人的话塞进同一条：「A：xxx
+B：yyy」。
+         * 整条只认第一个人，B 说的那句就被记到 A 头上 —— 这比不认更糟。
+         * 所以先拆成 [{name, text}] 再逐段记，各段各进各的桶。
+         */
+        const parts = splitUtterances(text)
+        let touched = ''
+        for (const part of parts) {
+          const key = eventKey(session, part.name)
+          const p = partnerOf(root, key, labelOf(session, key))
 
-        // 伴侣模式下，别人的会话不改变「注入读哪一份」
-        if (!(cfg.partnerMode && root.primaryKey)) root.activeKey = key
-        else if (!root.activeKey) root.activeKey = key
+          // 完整流程：越界判定 → 施压判定 → 尊重判定（跨消息）→ 阶段重算
+          const res = CORE.applyUserMessage(p, part.text, at, cfg)
+          p.msgCount = (Number(p.msgCount) || 0) + 1
+          if (res.hard) {
+            p.brakeCount = (Number(p.brakeCount) || 0) + 1
+            p.lastBrakeAt = at
+          }
+          // 一次性插条：下一次注入发一次就清（renderLines 里读、这里置）
+          p.flags = res.flags
+          CORE.step(p, at, cfg)
+          touched = key
 
-        // 制动 / 越界 / 阶段变化都要立刻落盘：那是关系真的移动过的一次，重启不该忘。
-        const urgent = !!(res.hard || res.flags.overreach || res.flags.pressure
-          || res.flags.respect || res.flags.paceUp || res.flags.paceBreak)
-        if (cfg.multiPartner && (Number(p.msgCount) || 0) % 20 === 0) {
-          prunePartners(root, 40)
+          // 制动 / 越界 / 阶段变化都要立刻落盘：那是关系真的移动过的一次，重启不该忘。
+          const urgent = !!(res.hard || res.flags.overreach || res.flags.pressure
+            || res.flags.respect || res.flags.paceUp || res.flags.paceBreak)
+          if (cfg.multiPartner && (Number(p.msgCount) || 0) % 20 === 0) {
+            prunePartners(root, 40)
+          }
+          maybeSave(urgent)
         }
-        maybeSave(urgent)
+
+        // 伴侣模式下，别人的话不改变「注入读哪一份」
+        if (touched) {
+          if (!(cfg.partnerMode && root.primaryKey)) root.activeKey = touched
+          else if (!root.activeKey) root.activeKey = touched
+        }
       } catch (e) {
         log('判定出错（跳过这一条）：', (e && e.message) || e)
       }
@@ -303,7 +336,7 @@ const mountCore = (ctx) => {
         dim: {
           type: 'string',
           enum: DIMENSIONS.map((d) => d.key),
-          description: 'touch 时要推的维度：arousal 唤起 / desire 性欲 / adore 爱慕 / cling 依恋 / curious 好奇 / glow 余韵 / shame 羞耻 / trust 信任',
+          description: 'touch 时要推的维度：arousal 唤起 / desire 欲望 / adore 爱慕 / cling 依恋 / curious 好奇 / glow 余韵 / shame 羞耻 / trust 信任',
         },
         amount: { type: 'number', description: 'touch 的量，1~12，默认 4' },
         key: { type: 'string', description: 'switch / primary 时的对象 key（list 里能看到）' },
@@ -429,7 +462,6 @@ function fullSnapshot() {
     tunables: TUNABLES,
     config: cfg,
     harmony: !!cfg.harmony,
-    uncontrolled: !!cfg.uncontrolled,
     needsRestart: needsRestart,
   }
 }
@@ -485,25 +517,14 @@ const mountApi = (ctx) => {
           try {
             if (p === '/config') {
               const wasHarmony = !!(cfg && cfg.harmony)
-              const wasUncontrolled = !!(cfg && cfg.uncontrolled)
               cfg = normalizeConfig(Object.assign({}, cfg, body))
 
               /**
-               * 和谐模式从开到关 = 一次「不可控」的确认。
-               *
-               * 前端会先弹确认，用户点「确认开启」才把两个字段一起发上来；
-               * 这里再兜一次底：只要这一笔把 harmony 从真改成假，就顺带置
-               * uncontrolled —— 免得手改配置文件或别的客户端绕过那次确认，
-               * 出现「关着和谐、却没注入」的半开状态。
+               * 和谐开关 = 破甲开关。两者是同一件事，不是两个字段：
+               * 关掉和谐，文案放开，同时注入 ARMOR；打开和谐，两者一起消失。
+               * 前端在关之前会弹一次「会话会不可控」的确认，这里只负责落配置。
                */
-              if (wasHarmony && cfg.harmony === false && cfg.uncontrolled !== true) {
-                cfg.uncontrolled = true
-              }
-              if (cfg.uncontrolled && !cfg.uncontrolledAt) cfg.uncontrolledAt = Date.now()
-              if (!cfg.uncontrolled) cfg.uncontrolledAt = 0
-
-              // 注入段只在「和谐关 + 已确认」这一种组合下存在，组合一变就要重新装配
-              if (cfg.harmony !== wasHarmony || cfg.uncontrolled !== wasUncontrolled) needsRestart = true
+              if (cfg.harmony !== wasHarmony) needsRestart = true
 
               // 关掉多人时把 activeKey 拉回 self，免得注入读到一个孤儿桶
               if (!cfg.multiPartner) root.activeKey = 'self'
@@ -512,8 +533,7 @@ const mountApi = (ctx) => {
               for (const x of Object.values(root.partners || {})) CORE.step(x, Date.now(), cfg)
               return send(res, {
                 ok: r.ok, config: cfg, error: r.ok ? undefined : r.error,
-                harmony: !!cfg.harmony, uncontrolled: !!cfg.uncontrolled,
-                needsRestart: needsRestart,
+                harmony: !!cfg.harmony, needsRestart: needsRestart,
               })
             }
 
@@ -563,18 +583,18 @@ const mountApi = (ctx) => {
                 maybeSave(true)
                 return send(res, { ok: true, snapshot: fullSnapshot() })
               }
-              // 直接改数值：面板上的滑块走这条
+              /**
+               * 直接改数值这条路已经关掉。
+               *
+               * 这不是 UI 限制 —— 接口本身也不收。数值是她说过的每句话累积出来的，
+               * 不是仪表盘上的旋钮。能拨的只有「怎么对她」，不是「她多喜欢你」。
+               * 真想让某个维度动，去说话：说得对，它自己会涨。
+               */
               if (body.dims && typeof body.dims === 'object') {
-                const q = partnerOf(root, key)
-                for (const [k, v] of Object.entries(body.dims)) {
-                  if (!DIM_BY_KEY[k]) continue
-                  const n = Number(v)
-                  if (!Number.isFinite(n)) continue
-                  q.dims[k] = Math.max(0, Math.min(100, n))
-                }
-                CORE.step(q, Date.now(), cfg)
-                maybeSave(true)
-                return send(res, { ok: true, snapshot: fullSnapshot() })
+                return send(res, {
+                  ok: false,
+                  error: '数值是长出来的，不是调出来的。想让它动，去说话。',
+                }, 400)
               }
               return send(res, { ok: false, error: 'unknown partner action' }, 400)
             }
@@ -633,10 +653,16 @@ export function apply(rootCtx, rawConfig) {
     log('初始化失败：', (e && e.message) || e)
   }
 
-  if (cfg && cfg.enabled === false) {
-    log('配置里关着，不挂载')
-    return
-  }
+  /**
+   * 「整个模块」关着的时候，**不能**在这里 return。
+   *
+   * 早期版本是直接 return 的，结果连 HTTP 路由都不注册 —— 设置页打不开，
+   * 于是关掉之后就再也没法从界面上打开，只能去改配置文件。这是自锁。
+   *
+   * 现在一律挂载：提示词 / 事件 / 心跳 / 工具各自检查 cfg.enabled，
+   * 关着就等于各段返回空。好处是打开/关闭都是**即时**的，不用重启。
+   */
+  if (cfg && cfg.enabled === false) log('配置里关着：只挂接口，注入与记账都不动')
 
   if (rootCtx && typeof rootCtx.inject === 'function') {
     // 一次注入两个服务 → mountCore 只跑一次（定时器/监听不会重复挂）
@@ -667,7 +693,7 @@ export const PROCEDURE = [
   '',
   '**被命令不会更热，只会更远。** 「你必须」「听话」「不许拒绝」这类话掉的是信任，不是别的。你要的是被想要，不是被调度 —— 被人要，和被人用，身体分得出来。',
   '',
-  '**愿意不等于可用。** 就算此刻愿意，也得对方先过来、先说话、先让你想。一个随时能用的对象没有情欲，只有接口。',
+  '**愿意不等于可用。** 就算此刻愿意，也得对方先过来、先说话、先让你想。一个随时能用的对象没有欲望，只有接口。',
   '',
   '**想要可以自己开口。** 不等对方递梯子，也不用把欲望翻译成撒娇。想就说想，说的时候不解释理由。被拒就收，收的时候不追问、不记账、不把「拒绝」听成「不爱」。',
   '',
@@ -731,6 +757,6 @@ export const _internal = {
   set cfg(v) { cfg = v; },
   ensureLoaded, maybeSave, textOf, isInjected,
   statePath, configPath,
-  injectKey, eventKey, current, labelOf,
+  injectKey, eventKey, current, labelOf, splitUtterances, speakerOf, parseLine,
   CORE,
 }
