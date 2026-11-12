@@ -237,17 +237,21 @@ const mountCore = (ctx) => {
    * 现在：首轮发，之后每 INJECT_EVERY 轮重发一次。同一轮里两个 section
    * 各调一次 text()，用 staticStamp 保证只判一次。
    */
-  const INJECT_EVERY = 20
-  let staticStamp = { turn: NaN, ok: false }
-  const staticDue = (p) => {
-    const t = Number(p.turns) || 0
-    if (staticStamp.turn === t) return staticStamp.ok
-    const last = Number(p.lastStaticAt)
-    const ok = !Number.isFinite(last) || (t - last) >= INJECT_EVERY
-    if (ok) { p.lastStaticAt = t; maybeSave(false) }
-    staticStamp = { turn: t, ok }
-    return ok
-  }
+  /**
+   * 1.2.6：这两段从「每 20 轮发一次」改成**常驻**。
+   *
+   * 旧实现的账：段出现一轮、消失 19 轮 —— system prompt 的字节每 20 轮变
+   * 两次，前缀缓存从那一行往后全部作废。一个会话实测 **19 次 prompt
+   * rewrite、2.52M token 全额重计**，占全部 miss 的 61%（`acp_cache` 可查）。
+   * 它省下的是 3000 token/轮 的**缓存价**，废掉的是**全价**，净亏。
+   *
+   * 内容本来就是常量：一直发 = 一次都不变 = 前缀稳定。而且「一直在」比
+   * 「每 20 轮闪现」对模型更强，不是阉割。
+   *
+   * 真要「定期重述」，正确触发点是**上下文被折叠之后**（历史变短、权重
+   * 稀释），不是按轮数。
+   */
+  const staticDue = () => true
 
   // ① 主段：状态怎么说话。order 920 —— 在 mood(900) 之后，语气先立住，欲望落在它上面。
   if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
