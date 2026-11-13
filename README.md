@@ -39,7 +39,7 @@ node /root/share/DSHBox/plugins/_workshop/link.mjs dsh-attachment
 
 `link.mjs` 做的事，手改也一样：
 
-1. profile `package.json` → `dependencies["dsh-attachment"] = "link:/root/share/DSHBox/plugins/dsh-attachment"`
+1. profile `package.json` → `dependencies["dsh-attachment"] = "link:/root/share/DSHBox/publish/dsh-attachment"`
 2. profile `package.json` → `dsh.profile.bundles` 里加 `dsh-attachment`
 3. `node_modules/dsh-attachment` 软链到插件目录
 4. profile `cordis.patch.yml` 追加：
@@ -467,7 +467,7 @@ dsh-attachment/
 ## 十一、测试
 
 ```bash
-cd /root/share/DSHBox/plugins/dsh-attachment
+cd /root/share/DSHBox/publish/dsh-attachment
 node test.mjs          # 409 项
 node --check index.js core.js store.js prompts.js
 node -e "new Function('window', require('fs').readFileSync('client.js','utf8'))"

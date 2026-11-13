@@ -6,3 +6,6 @@ node_modules/
 dsh-attachment.json
 dsh-attachment-config.json
 dsh-sex.json
+
+# 内部设计/修复记录，不公开发布
+docs/

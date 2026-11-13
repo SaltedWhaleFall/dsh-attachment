@@ -28,7 +28,7 @@
 ## 复现（不需要装鱼缸，跑这个就出来）
 
 ```bash
-node plugins/dsh-attachment/tools/repro-speaker.mjs
+node publish/dsh-attachment/tools/repro-speaker.mjs
 ```
 
 三行输出，分别是三条独立的误认路径：
@@ -118,8 +118,8 @@ return sid ? sid.slice(0, 8) : …
 ## 验证清单（改完逐条跑）
 
 ```bash
-node plugins/dsh-attachment/tools/repro-speaker.mjs     # 期望：8 个人 → 1 个人
-node --test plugins/dsh-attachment/test.mjs             # 409 项不能掉
+node publish/dsh-attachment/tools/repro-speaker.mjs     # 期望：8 个人 → 1 个人
+node --test publish/dsh-attachment/test.mjs             # 409 项不能掉
 ```
 
 - [ ] 一条鱼缸 agency 回合 → `splitUtterances()` 只出 1 段，name 为 `''`

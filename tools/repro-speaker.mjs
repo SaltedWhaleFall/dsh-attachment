@@ -1,5 +1,5 @@
 // repro-speaker.mjs —— 复现「多人模式把提示词结构认成人」。
-// 用法：node plugins/dsh-attachment/tools/repro-speaker.mjs
+// 用法：node publish/dsh-attachment/tools/repro-speaker.mjs
 // 期望修复后：case 1 只出 1 段且 name 为 ''；case 2 出两个不同的人；case 3 认不出。
 import { splitUtterances, speakerOf } from '../speaker.js'
 

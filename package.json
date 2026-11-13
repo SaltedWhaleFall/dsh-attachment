@@ -16,7 +16,12 @@
     "cordis.patch.yml",
     "icon.svg",
     "README.md",
-    "BREAKOUT.md"
+    "BREAKOUT.md",
+    "FIX-speaker-multipool.md",
+    "suggestions/README.md",
+    "suggestions/human/README.md",
+    "suggestions/human/TEMPLATE.md",
+    "suggestions/ai/README.md"
   ],
   "exports": {
     ".": "./index.js",
