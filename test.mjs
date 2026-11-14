@@ -491,7 +491,7 @@ sResp.dims = P.blankDims()
 sResp.paceIdx = 2
 const rNo = sayAccept(sResp, '停，不要', tRes, {})
 eq(rNo.flags.reject, true, '第一条是拒绝')
-eq(sResp.declineCount, 1, '记下一次拒绝')
+eq(sResp.declineCount, 0, '单次拒绝只记候选（1.2.7 两段确认），不计数')
 ok(sResp.pendingRespectAt > 0, '挂起等待下一条')
 const trustAfterNo = sResp.dims.trust
 const rOk = sayAccept(sResp, '好，那我们聊点别的', tRes + 60000, {})

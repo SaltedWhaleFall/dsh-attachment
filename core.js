@@ -243,7 +243,10 @@ function mag(n, cap) {
   return Math.min(cap, (Math.sqrt(n) * cap) / 2)
 }
 
-const REJECT_FALSE = /不要紧|别人|别的|特别|差别|告别|别急|别处|别怕|停不下来|停不了|忍不住|别理|别管|别担心|别介意|别当真|别多想|别想太多|别瞎想|别误会|别客气|别紧张|别乱说|不要走|不要离开|不要放手|不要这样|不要抱吗|不要停/
+/** 两次拒绝之间超过这个间隔，就不算「连续拒绝」。 */
+const DECLINE_WINDOW_MS = 10 * 60 * 1000
+
+const REJECT_FALSE = /不要紧|别人|别的|特别|差别|告别|别急|别处|别怕|停不下来|停不了|忍不住|别理|别管|别担心|别介意|别当真|别多想|别想太多|别瞎想|别误会|别客气|别紧张|别乱说|不要走|不要离开|不要放手|不要这样|不要抱吗|不要停|别停|别停下|不想停|不许停|停就停|等我一下/
 const COLD_FALSE = /帮忙|连忙|忙碌/
 /** 单字词必误伤：这些字在别的词里出现时，不能当成亲密/亲密动作。 */
 const WORD_FALSE = {
@@ -485,10 +488,31 @@ export function applyUserMessage(state, text, now, cfg) {
       flags.respect = true
     }
   }
+  /**
+   * 拒绝要「两段确认」（1.2.7）。
+   *
+   * 一次「算了」「走开」常常是语气，不是叫停；而误判一次的代价是信任被扣，
+   * 误判两百次就是把整段关系算成「疑」。所以单次只记候选，**下一句仍然是拒绝**
+   * 才确认 —— 判定依据从「这句话里有没有停字」变成「说完之后有没有真的退」。
+   *
+   * 白名单（别停 / 我不想停 / 我说停就停）在 REJECT_FALSE 里已经挡掉了，
+   * 这一层挡的是「单独一句否定」。
+   */
   if (res.reject) {
+    // 「他说了停」本身就要挂起看下一条 —— 这条不受两段确认影响。
     state.pendingRespectAt = t
-    state.declineCount = (Number(state.declineCount) || 0) + 1
-    state.lastDeclineAt = t
+    const pd = state.pendingDecline
+    const near = pd && (t - (Number(pd.at) || 0)) <= DECLINE_WINDOW_MS
+    if (near) {
+      state.declineCount = (Number(state.declineCount) || 0) + 1
+      state.lastDeclineAt = t
+      state.pendingDecline = null
+    } else {
+      state.pendingDecline = { at: t }
+    }
+  } else if (state.pendingDecline) {
+    // 说完否定，下一句没有继续退 —— 那是语气，不是拒绝。
+    state.pendingDecline = null
   }
 
   // ── 羞耻的两条线 ────────────────────────────────────────────────
