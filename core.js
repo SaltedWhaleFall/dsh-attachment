@@ -17,6 +17,7 @@
 import {
   DIMENSIONS, DIM_BY_KEY, DIM_KEYS, HEAT_BANDS, BOND_BANDS, CURIOUS_BANDS, TRUST_BANDS, SHAME_BANDS,
   MAIN, CURIOUS_LINES, GLOW_LINE, FEEDBACK_LINES, QUIET_LINE, LEX, LEX_LEVEL, SHAME_SOFT,
+  LONG_TERM_LINE,
   WILL_LINES, SHAME_ROUTE_LINES, PACE, PACE_ORDER, PACE_BY_KEY, PACE_BREAK_TRUST,
   SAFE_LANG, SAFE_PACE, SAFE_FEEDBACK_LINES, SAFE_SHAME_LINE,
   OVERREACH_LINE, PRESSURE_LINE, RESPECT_LINE, PACE_LINE_PREFIX,
@@ -622,25 +623,9 @@ export function advanceTurns(state, n, now, cfg) {
   if (!state.dims) state.dims = blankDims()
   const ds = hlScale(c)
   for (const d of DIMENSIONS) {
-    // 长效维度（欲望 / 爱慕 / 依恋）不自动回落。
+    // 长效维度（欲望 / 爱慕 / 依恋 / 信任）不自动回落。
     // 关系靠攒，不靠耗；掉只能是被什么真的扣掉的，或者自己 set 掉的。
-    //
-    // ── v1.2.8：trust 开一条单向回升通道 ────────────────────────────
-    // trust 是唯一带「持续单向惩罚」的维度：每一句被判施压就 -5（见 pressure
-    // 分支），而它同时又是 slow —— 于是只掉不回，被打到底就永远停在 0。
-    // 实测（多人）：关系分 76、信任 0、卡在「解」门口差 4 分，聊三年也够不到。
-    // 修法：只补「向 base 回升」这一条，且**只在低于 base 时生效**；
-    // 高于 base 依旧不回落 —— 「关系靠攒，不靠耗」那条原则不动。
-    if (d.slow) {
-      if (d.key === 'trust') {
-        const tbase = baseOf(d.key, state, t, c)
-        const tcur = Number(state.dims[d.key]) || 0
-        if (tcur < tbase) {
-          state.dims[d.key] = clampNum(decayTurns(tcur, tbase, turns, d.halfLifeTurns / ds))
-        }
-      }
-      continue
-    }
+    if (d.slow) continue
     const base = baseOf(d.key, state, t, c)
     state.dims[d.key] = clampNum(decayTurns(state.dims[d.key], base, turns, d.halfLifeTurns / ds))
   }
@@ -723,6 +708,7 @@ export function renderLines(state, opts) {
      * 删掉之后前缀稳定，她说话也不用「因为数据是 62」。
      */
     out.push('数据：在状态文件里。要看自己读，别拿它当话说的理由。')
+    out.push(LONG_TERM_LINE)
     if (state.flags) {
       if (state.flags.paceHint) out.push(OVERREACH_LINE)
       if (state.flags.paceBreak) {
@@ -751,6 +737,7 @@ export function renderLines(state, opts) {
 
   // ── 意愿：此刻愿不愿意 ────────────────────────────────────────
   lines.push(`此刻：${will} —— ${WILL_LINES[will] || WILL_LINES['缓']}`)
+  lines.push(LONG_TERM_LINE)
 
   // ── 羞耻：一个值，两条线。只在真的起羞时才出现 ────────────────
   const shameBand = state.shameBand || bandOf(Number(state.dims && state.dims.shame) || 0, null, SHAME_BANDS)
