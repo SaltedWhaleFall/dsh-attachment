@@ -270,7 +270,7 @@ const sayAccept = (st, text, at, cfg) => {
 MOD.apply(ctx, {})
 
 eq(sections.length, 3, '注册了三段提示词')
-eq(sections.filter((s) => s.order === 920).length, 1, '状态段 order 920')
+eq(sections.filter((s) => s.order === 10150).length, 1, '状态段 order 10150')
 eq(sections.filter((s) => s.order === 905).length, 1, '常法段 order 905')
 eq(sections.filter((s) => s.order === 10145).length, 1, '不可控段 order 10145')
 ok(sections.every((s) => s.interpolate === false), '全部 interpolate:false')
@@ -284,7 +284,7 @@ eq(routes[0].path, '/dsh-attachment-api', '主路由路径')
 eq(routes[1].path, '/dsh-attachment/state.json', '探活路由路径')
 
 // 提示词 text 能跑
-const stText = sections.find((s) => s.order === 920).text()
+const stText = sections.find((s) => s.order === 10150).text()
 ok(typeof stText === 'string' && /现在的(依恋|欲望)状态/.test(stText), '状态段 text() 出内容')
 const procText = sections.find((s) => s.order === 905).text()
 ok(procText.includes('依恋这件事'), '常法段 text() 出内容')
@@ -592,7 +592,7 @@ eq(P.DIMENSIONS.filter((d) => d.slow).length, 4, '四个长效维度')
 
 // 关闭开关：text 返回空
 MOD._internal.cfg = Object.assign({}, MOD._internal.cfg, { inject: false })
-eq(sections.find((s) => s.order === 920).text(), '', 'inject:false 时状态段闭嘴')
+eq(sections.find((s) => s.order === 10150).text(), '', 'inject:false 时状态段闭嘴')
 MOD._internal.cfg = Object.assign({}, MOD._internal.cfg, { inject: true, enabled: true })
 
 // enabled:false 不挂载

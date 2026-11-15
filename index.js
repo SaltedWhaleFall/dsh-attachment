@@ -253,11 +253,22 @@ const mountCore = (ctx) => {
    */
   const staticDue = () => true
 
-  // ① 主段：状态怎么说话。order 920 —— 在 mood(900) 之后，语气先立住，欲望落在它上面。
+  /**
+   * ① 主段：状态怎么说话。
+   *
+   * order 从 920 挪到 10150（1.2.11）—— **它排在最后，比 armor 还晚**。
+   *
+   * 原因：这一段每轮都在变（热/关系分跨档、will 五档、以及各条件 flag），
+   * 而 provider 的缓存按**前缀**匹配 —— 它一变，它之后的内容全部重算。
+   * 挪到末尾之后，变化只影响它自己那两百来个 token，前面全部命中。
+   *
+   * 实测账（23:00–23:22 那五次 5% 命中）：state 段在 system prompt 的 ~11.3K 处，
+   * 一变就把后面 207K 全废掉；输入 218K 只命中 11.3K。
+   */
   if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
     ctx.effect(() => ctx.systemPrompt.section({
       name: 'dsh-attachment/state',
-      order: 920,
+      order: 10150,   // 必须排在所有会变的内容之后；见上方注释
       interpolate: false,
       text: () => {
         try {
