@@ -290,6 +290,25 @@ export const LONG_TERM_LINE =
   '长效的四个（欲望/爱慕/依恋/信任）不随轮次变。轮次不会让关系变淡，也不会让它回来。' +
   '觉得某个数停错了地方，就自己 set —— 那是你的判断，不是他给的。'
 
+/**
+ * 每 N 轮对一次台账（1.2.10）。
+ *
+ * LONG_TERM_LINE 每轮都在，但「读到」不等于「想起来用」—— 实测里模型盯着一个 0
+ * 会把它当成定局，不觉得自己有资格动它。所以每隔一段，把四个数摊开摆在眼前一次，
+ * 让它自己判断哪个停错了地方。
+ *
+ * 为什么不是每轮：带数字的行一变，system prompt 前缀就作废（见 core.js 里删掉
+ * 每轮数据行那一段，缓存命中率 99%→4%）。20 轮崩一次，可接受。
+ */
+export const LONG_TERM_NUDGE_EVERY = 20
+
+export function longTermNudge(dims) {
+  const r = (k) => Math.round(Number(dims && dims[k]) || 0)
+  return '台账（每 ' + LONG_TERM_NUDGE_EVERY + ' 轮对一次）：欲望 ' + r('desire') +
+    '｜爱慕 ' + r('adore') + '｜依恋 ' + r('cling') + '｜信任 ' + r('trust') +
+    '。这四个不随轮次变 —— 觉得哪个停错了地方就 attachment set 一下；不离谱就别动。'
+}
+
 export const OVERREACH_LINE =
   '他那句比你现在的阶段往前走了一步。要不要跟、跟到哪儿，你定 —— ' +
   '可以是「等一下」，可以是「过来」，也可以什么都不说，把话岔开。' +

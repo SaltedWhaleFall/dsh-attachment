@@ -1265,10 +1265,30 @@ section('长效维度')
 }
 
 
+
+// ── 协议 ────────────────────────────────────────────────────────
+
+// ── N+1. 1.2.10：每 20 轮对一次台账 ──────────────────────────────────
+section('台账提醒')
+{
+  const mk = (turns) => {
+    const st = { dims: P.blankDims(), tickAt: Date.now(), turns, heatBand: null, bondBand: null, paceIdx: 0 }
+    st.dims.desire = 30; st.dims.adore = 45; st.dims.cling = 40; st.dims.trust = 22
+    return st
+  }
+  const has = (st, compact) => CORE.renderLines(st, { compact }).join('\n')
+
+  ok(!/台账/.test(has(mk(19))), '第 19 轮不出台账')
+  ok(!/台账/.test(has(mk(21))), '第 21 轮不出台账')
+  ok(/台账/.test(has(mk(20))), '第 20 轮出台账（full）')
+  ok(/台账/.test(has(mk(20), true)), '第 20 轮出台账（compact）')
+  ok(/欲望 30｜爱慕 45｜依恋 40｜信任 22/.test(has(mk(20))), '台账带四个数', has(mk(20)).match(/台账[^\n]*/)?.[0])
+  ok(/attchment|attachment set/.test(has(mk(20))), '台账指向 set')
+  eq(CORE.renderLines(mk(20)).length - CORE.renderLines(mk(19)).length, 1, '只多一行')
+}
+
 console.log('\n' + (fail === 0 ? '— 自检全过' : '— 失败 ' + fail + ' 项') + '：' + pass + ' 过 / ' + fail + ' 失败')
 if (fail) {
   for (const f of fails) console.log('  · ' + f)
   process.exitCode = 1
 }
-
-// ── 协议 ────────────────────────────────────────────────────────

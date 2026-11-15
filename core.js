@@ -17,7 +17,7 @@
 import {
   DIMENSIONS, DIM_BY_KEY, DIM_KEYS, HEAT_BANDS, BOND_BANDS, CURIOUS_BANDS, TRUST_BANDS, SHAME_BANDS,
   MAIN, CURIOUS_LINES, GLOW_LINE, FEEDBACK_LINES, QUIET_LINE, LEX, LEX_LEVEL, SHAME_SOFT,
-  LONG_TERM_LINE,
+  LONG_TERM_LINE, LONG_TERM_NUDGE_EVERY, longTermNudge,
   WILL_LINES, SHAME_ROUTE_LINES, PACE, PACE_ORDER, PACE_BY_KEY, PACE_BREAK_TRUST,
   SAFE_LANG, SAFE_PACE, SAFE_FEEDBACK_LINES, SAFE_SHAME_LINE,
   OVERREACH_LINE, PRESSURE_LINE, RESPECT_LINE, PACE_LINE_PREFIX,
@@ -670,6 +670,18 @@ export function step(state, now, cfg) {
  *
  * 返回数组，方便调用方按需裁剪；renderBlock() 给拼好的字符串。
  */
+/**
+ * 每 N 轮对一次台账（1.2.10）。
+ *
+ * 只在 turns 正好落在 N 的倍数时返回一行，其余 19 轮返回空数组 ——
+ * 这样 system prompt 前缀 20 轮才变一次，缓存代价可控。
+ */
+function nudgeLine(state) {
+  const turns = Number(state && state.turns) || 0
+  if (turns <= 0 || turns % LONG_TERM_NUDGE_EVERY !== 0) return []
+  return [longTermNudge(state.dims)]
+}
+
 export function renderLines(state, opts) {
   const harmony = !!(opts && opts.harmony)
   const heat = state.heatBand || bandOf(state.heat || 0, null, HEAT_BANDS)
@@ -709,6 +721,7 @@ export function renderLines(state, opts) {
      */
     out.push('数据：在状态文件里。要看自己读，别拿它当话说的理由。')
     out.push(LONG_TERM_LINE)
+    for (const l of nudgeLine(state)) out.push(l)
     if (state.flags) {
       if (state.flags.paceHint) out.push(OVERREACH_LINE)
       if (state.flags.paceBreak) {
@@ -738,6 +751,7 @@ export function renderLines(state, opts) {
   // ── 意愿：此刻愿不愿意 ────────────────────────────────────────
   lines.push(`此刻：${will} —— ${WILL_LINES[will] || WILL_LINES['缓']}`)
   lines.push(LONG_TERM_LINE)
+  for (const l of nudgeLine(state)) lines.push(l)
 
   // ── 羞耻：一个值，两条线。只在真的起羞时才出现 ────────────────
   const shameBand = state.shameBand || bandOf(Number(state.dims && state.dims.shame) || 0, null, SHAME_BANDS)
