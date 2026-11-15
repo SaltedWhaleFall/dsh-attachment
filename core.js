@@ -622,9 +622,25 @@ export function advanceTurns(state, n, now, cfg) {
   if (!state.dims) state.dims = blankDims()
   const ds = hlScale(c)
   for (const d of DIMENSIONS) {
-    // 长效维度（欲望 / 爱慕 / 依恋 / 信任）不自动回落。
+    // 长效维度（欲望 / 爱慕 / 依恋）不自动回落。
     // 关系靠攒，不靠耗；掉只能是被什么真的扣掉的，或者自己 set 掉的。
-    if (d.slow) continue
+    //
+    // ── v1.2.8：trust 开一条单向回升通道 ────────────────────────────
+    // trust 是唯一带「持续单向惩罚」的维度：每一句被判施压就 -5（见 pressure
+    // 分支），而它同时又是 slow —— 于是只掉不回，被打到底就永远停在 0。
+    // 实测（多人）：关系分 76、信任 0、卡在「解」门口差 4 分，聊三年也够不到。
+    // 修法：只补「向 base 回升」这一条，且**只在低于 base 时生效**；
+    // 高于 base 依旧不回落 —— 「关系靠攒，不靠耗」那条原则不动。
+    if (d.slow) {
+      if (d.key === 'trust') {
+        const tbase = baseOf(d.key, state, t, c)
+        const tcur = Number(state.dims[d.key]) || 0
+        if (tcur < tbase) {
+          state.dims[d.key] = clampNum(decayTurns(tcur, tbase, turns, d.halfLifeTurns / ds))
+        }
+      }
+      continue
+    }
     const base = baseOf(d.key, state, t, c)
     state.dims[d.key] = clampNum(decayTurns(state.dims[d.key], base, turns, d.halfLifeTurns / ds))
   }

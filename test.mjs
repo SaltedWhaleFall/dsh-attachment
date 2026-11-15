@@ -1248,10 +1248,41 @@ for (const t of ['不要强迫你的智能体', '不要把她当作实现欲望�
 ok(clientSrc.includes('我已阅读并理解以上五条'), '勾选文案在')
 ok(/disabled:\s*busy\s*\|\|\s*!agreed/.test(clientSrc), '没打钩时按钮是灰的')
 
+// ── 协议 ────────────────────────────────────────────────────────
+
+// ── 协议 ────────────────────────────────────────────────────────
+
+// ── N. v1.2.8：trust 只掉不回的问题 ──────────────────────────────────
+section('信任回升')
+{
+  const st = { dims: P.blankDims(), tickAt: 0 }
+  st.dims.trust = 0
+  // 走 64 轮（一个半衰期），应该从 0 往 base=22 爬到 11 左右
+  CORE.advanceTurns(st, 64, Date.now(), CORE.DEFAULTS)
+  ok(st.dims.trust > 8 && st.dims.trust < 13, '低于 base 时按半衰期回升', String(st.dims.trust))
+  const t1 = st.dims.trust
+  CORE.advanceTurns(st, 64, Date.now(), CORE.DEFAULTS)
+  ok(st.dims.trust > t1 && st.dims.trust < 22, '继续向上、但不超过 base', String(st.dims.trust))
+  CORE.advanceTurns(st, 400, Date.now(), CORE.DEFAULTS)
+  ok(st.dims.trust > 21.5 && st.dims.trust <= 22, '最终收敛到 base', String(st.dims.trust))
+
+  // 高于 base 时的 trust 依旧不回落（「关系靠攒」那条不动）
+  const hi = { dims: P.blankDims(), tickAt: 0 }
+  hi.dims.trust = 80
+  CORE.advanceTurns(hi, 500, Date.now(), CORE.DEFAULTS)
+  eq(hi.dims.trust, 80, '高于 base 不回落')
+
+  // 其他 slow 维度照旧不回落
+  const other = { dims: P.blankDims(), tickAt: 0 }
+  other.dims.adore = 90
+  other.dims.cling = 90
+  CORE.advanceTurns(other, 200, Date.now(), CORE.DEFAULTS)
+  eq(other.dims.adore, 90, 'adore 仍不自动回落')
+  eq(other.dims.cling, 90, 'cling 仍不自动回落')
+}
+
 console.log('\n' + (fail === 0 ? '— 自检全过' : '— 失败 ' + fail + ' 项') + '：' + pass + ' 过 / ' + fail + ' 失败')
 if (fail) {
   for (const f of fails) console.log('  · ' + f)
   process.exitCode = 1
 }
-
-// ── 协议 ────────────────────────────────────────────────────────
