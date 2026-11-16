@@ -514,6 +514,12 @@ B：yyy」。
             CORE.step(p, Date.now(), cfg)
             maybeSave(true)
             const now = Number(p.dims[dim]) || 0
+            // 记一笔「上次挪」：上下文压缩后模型不会忘记自己能 set（那条在 system prompt
+            // 里），但会忘记刚挪过 —— 台账行靠这个字段把间隔说清楚。
+            p.lastSetAt = Date.now()
+            p.lastSetTurn = Number(p.turns) || 0
+            p.lastSetDims = dim
+            maybeSave(false)
             log('set', dim, cur.toFixed(1), '->', now.toFixed(1), a.why ? '｜' + String(a.why).slice(0, 120) : '')
             const left = Math.abs(want - now) >= 0.5 ? '（一次最多 ' + cap + '，剩下慢慢来）' : ''
             return { ok: true, message: dim + ' ' + Math.round(now) + left + '。现在：' + shortLine(p) }

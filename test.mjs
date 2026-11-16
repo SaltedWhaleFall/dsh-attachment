@@ -1282,6 +1282,21 @@ section('长效维度')
 
 // ── N+1. 1.2.10：每 20 轮对一次台账 ──────────────────────────────────
 section('台账提醒')
+
+// 上一条台账里要说清「上次挪过没有」—— 压缩会把历史里那次 set 摘掉，
+// 但「我能 set」不会丢（它在 system prompt 里），丢的是「我刚挪过没有」。
+const sFresh = STORE.blankState()
+sFresh.turns = 20
+const nudgeFresh = CORE.renderLines(sFresh, { compact: true }).join('\n')
+ok(nudgeFresh.indexOf('还没挪过') >= 0, '没挪过时台账说「还没挪过」', nudgeFresh.slice(0, 200))
+const sSet = STORE.blankState()
+sSet.turns = 40
+sSet.lastSetAt = Date.now()
+sSet.lastSetTurn = 20
+sSet.lastSetDims = 'trust'
+const nudgeSet = CORE.renderLines(sSet, { compact: true }).join('\n')
+ok(nudgeSet.indexOf('上次挪：20 轮前（trust）') >= 0, '挪过时台账说清几轮前、挪的哪个',
+  nudgeSet.slice(0, 240))
 {
   const mk = (turns) => {
     const st = { dims: P.blankDims(), tickAt: Date.now(), turns, heatBand: null, bondBand: null, paceIdx: 0 }

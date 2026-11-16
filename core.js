@@ -679,7 +679,7 @@ export function step(state, now, cfg) {
 function nudgeLine(state) {
   const turns = Number(state && state.turns) || 0
   if (turns <= 0 || turns % LONG_TERM_NUDGE_EVERY !== 0) return []
-  return [longTermNudge(state.dims)]
+  return [longTermNudge(state.dims, state)]
 }
 
 export function renderLines(state, opts) {

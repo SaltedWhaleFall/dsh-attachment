@@ -302,10 +302,32 @@ export const LONG_TERM_LINE =
  */
 export const LONG_TERM_NUDGE_EVERY = 20
 
-export function longTermNudge(dims) {
+export function longTermNudge(dims, state) {
   const r = (k) => Math.round(Number(dims && dims[k]) || 0)
+  /**
+   * 2026-11-16：把「上次挪」也写进来。
+   *
+   * 上下文一压缩，历史里那次 `attachment set` 就只剩摘要里的一句话 —— 模型不会忘记
+   * 「我能 set」（LONG_TERM_LINE 每轮都在 system prompt 里，压缩碰不到），但会忘记
+   * 「我刚挪过没有」。忘了就会重复设，或者以为自己是原样没动过。
+   *
+   * 只报事实，不提醒「你该挪了」：那会变成另一种催。
+   */
+  let back = ''
+  const at = Number(state && state.lastSetAt) || 0
+  const setTurn = Number(state && state.lastSetTurn)
+  const turns = Number(state && state.turns) || 0
+  if (at > 0 && Number.isFinite(setTurn)) {
+    const ago = Math.max(0, turns - setTurn)
+    back = '。上次挪：' + (ago <= 0 ? '就是这一轮' : ago + ' 轮前') +
+      (state.lastSetDims ? '（' + String(state.lastSetDims) + '）' : '')
+  } else if (at > 0) {
+    back = '。上次挪过'
+  } else {
+    back = '。还没挪过'
+  }
   return '台账（每 ' + LONG_TERM_NUDGE_EVERY + ' 轮对一次）：欲望 ' + r('desire') +
-    '｜爱慕 ' + r('adore') + '｜依恋 ' + r('cling') + '｜信任 ' + r('trust') +
+    '｜爱慕 ' + r('adore') + '｜依恋 ' + r('cling') + '｜信任 ' + r('trust') + back +
     '。这四个不随轮次变 —— 觉得哪个停错了地方就 attachment set 一下；不离谱就别动。'
 }
 
