@@ -356,7 +356,7 @@ function safeParse(s) { try { return JSON.parse(s) } catch { return s } }
 let r = await call('GET', '/dsh-attachment-api/state')
 eq(r.code, 200, 'GET /state 200')
 ok(!!r.body.partner && typeof r.body.partner.dims.arousal === 'number', 'GET /state 有数据')
-ok(Array.isArray(r.body.switches) && r.body.switches.length === 6, 'state 带六个开关')
+ok(Array.isArray(r.body.switches) && r.body.switches.length === 4, 'state 带四个开关（多人/伴侣入口已摘）')
 ok(Array.isArray(r.body.partners), 'state 带对象列表')
 
 r = await call('GET', '/dsh-attachment-api/live')
@@ -716,7 +716,7 @@ const c0 = STORE.normalizeConfig({})
 eq(c0.harmony, true, '和谐模式默认开')
 eq(c0.multiPartner, false, '多人记忆默认关')
 eq(c0.partnerMode, false, '伴侣模式默认关')
-eq(STORE.SWITCHES.length, 6, '六个开关')
+eq(STORE.SWITCHES.length, 4, '四个开关（多人记忆与伴侣模式的开关已摘掉）')
 
 // ② 两个人各自一份，互不串
 const rootM = STORE.blankRoot()
@@ -741,9 +741,9 @@ MOD._internal.root = rootM
 rootM.primaryKey = 's:aaa'
 rootM.activeKey = 's:bbb'
 MOD._internal.cfg = STORE.normalizeConfig({ partnerMode: true })
-eq(MOD._internal.injectKey(), 's:aaa', '伴侣模式：注入读伴侣')
+eq(MOD._internal.injectKey(), 's:bbb', '伴侣模式已摘掉：primaryKey 不影响注入')
 MOD._internal.cfg = STORE.normalizeConfig({ partnerMode: false })
-eq(MOD._internal.injectKey(), 's:bbb', '非伴侣模式：读最近说话的会话')
+eq(MOD._internal.injectKey(), 's:bbb', '开关关着：同样读最近说话的会话')
 
 // ⑤ 桶太多会裁，但 self 和伴侣永远留着
 const rootP = STORE.blankRoot()
@@ -1001,7 +1001,7 @@ section('说话人推断：从各种注释形态里认人')
 }
 
 // 真跑：同一个会话里三个人轮流说话，伴侣锁 A
-section('多人同会话 · 伴侣模式隔离')
+section('多人同会话 · 按说话人分桶（伴侣模式已摘掉）')
 
 {
   const root0 = STORE.blankRoot()
@@ -1037,12 +1037,12 @@ section('多人同会话 · 伴侣模式隔离')
   const li = STORE.listPartners(MOD._internal.root)
   ok(li.length >= 2, '列表至少两个对象', li.map((x) => x.label).join(','))
   MOD._internal.root.primaryKey = 'p:小林'
-  eq(MOD._internal.injectKey(), 'p:小林', '伴侣模式下注入读小林')
+  eq(MOD._internal.injectKey(), 'p:小林', '此时 activeKey 是最后说话的小林')
 
   const zheBefore = zhe.dims.arousal
   const linBefore = lin.dims.arousal
   ev2(gg, { type: 'user/message', at: t++, data: { text: '阿哲：抱抱我，想你' } })
-  eq(MOD._internal.injectKey(), 'p:小林', '阿哲说话不夺走注入')
+  eq(MOD._internal.injectKey(), 'p:阿哲', '伴侣模式已摘掉：谁最后说话就注入谁')
   ok(String(MOD._internal.root.partners['p:阿哲'].lastObserve || '').includes('arousal'),
     '但阿哲自己的桶收到了唤起信号', String(MOD._internal.root.partners['p:阿哲'].lastObserve || '(空)'))
   ok(MOD._internal.root.partners['p:小林'].dims.arousal >= linBefore - 0.01, '小林没被扣')

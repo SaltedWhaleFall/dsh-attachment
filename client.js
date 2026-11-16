@@ -224,7 +224,6 @@ window.__ModuleLoader__.load({
       var heat = p.heatBand || '静'
       var hh = hue(heat)
       var switches = snap.switches || []
-      var partners = snap.partners || []
       var harmony = !!cfg.harmony
 
       // ── 状态条：不可控 / 待重启 ──
@@ -313,14 +312,14 @@ window.__ModuleLoader__.load({
             })
           ),
           h('div', { className: 'note' },
-            '和谐模式关掉才会出现性描写；多人记忆按会话分开记；伴侣模式锁定一个人，别人的会话不再影响注入。'),
+            '和谐模式关掉才会出现性描写。'),
         ),
 
         // ── 当前对象 ──
         h('div', { className: 'card' },
           h('div', { className: 'card-hd' },
-            '当前对象 · ' + (snap.injectLabel || '默认') + (snap.primaryKey === snap.injectKey ? ' ★' : ''),
-            h('span', { className: 'muted' }, ' ' + (cfg.partnerMode ? '伴侣模式锁定' : '跟随最近会话')),
+            '当前对象 · ' + (snap.injectLabel || '默认'),
+            h('span', { className: 'muted' }, ' 跟随最近会话'),
           ),
 
           h('div', { className: 'row' },
@@ -350,46 +349,6 @@ window.__ModuleLoader__.load({
           h('div', { className: 'note readonly' },
             '能改的是你怎么对她；不能改的是她多喜欢你。想让它动，去说话。',
           ),
-        ),
-
-        // ── 对象列表 ──
-        h('div', { className: 'card' },
-          h('div', { className: 'card-hd' }, '对象 · ' + partners.length + ' 个'),
-          partners.length === 0
-            ? h('div', { className: 'note' }, '只有一个。打开「多人记忆」后，同一个会话里不同的人会各自分开记 —— 认的是消息里的「A：」「【A】」「A 说：」这类前缀。')
-            : h('div', { className: 'list' },
-                partners.map(function (x) {
-                  return h('div', { className: 'item' + (x.active ? ' active' : ''), key: x.key },
-                    h('span', { className: 'it-name' }, (x.primary ? '★ ' : '') + (x.label || x.key)),
-                    h('span', { className: 'it-meta' },
-                      x.msgs + ' 句 · 第 ' + x.pace + ' 段 · ' + x.heat
-                      + ' · ' + (String(x.key).indexOf('p:') === 0 ? '说话人'
-                        : String(x.key).indexOf('s:') === 0 ? '会话' : '共用')),
-                    h('span', { className: 'grow' }),
-                    x.active
-                      ? h('span', { className: 'pill' }, '当前')
-                      : h('button', { disabled: busy, onClick: function () { post('/partner', { key: x.key, action: 'activate' }) } }, '切换'),
-                    x.primary
-                      ? h('button', { disabled: busy, onClick: function () { post('/partner', { key: x.key, action: 'clearPrimary' }) } }, '取消伴侣')
-                      : h('button', { disabled: busy, onClick: function () { post('/partner', { key: x.key, action: 'setPrimary' }) } }, '设伴侣'),
-                    h('button', { disabled: busy, onClick: function () { rename(x) } }, '改名'),
-                    h('button', {
-                      disabled: busy,
-                      onClick: function () { if (window.confirm('把这个对象重置成出厂状态？关系会从头开始。')) post('/partner', { key: x.key, action: 'reset' }) },
-                    }, '重置'),
-                    x.key === 'self' || x.primary
-                      ? null
-                      : h('button', {
-                          disabled: busy,
-                          onClick: function () { if (window.confirm('删掉这个对象？状态文件里会一起删。')) post('/partner', { key: x.key, action: 'delete' }) },
-                        }, '删除'),
-                  )
-                })
-              ),
-          h('div', { className: 'note' },
-            '★ = 伴侣。伴侣模式下注入只读 ★ 那一个；没开伴侣模式时跟随最近说话的那个人。',
-            h('br'),
-            '「说话人」= 从正文前缀认出来的某个人；「会话」= 认不出是谁，这个会话整体算一个；「共用」= 多人记忆关着。'),
         ),
 
         err ? h('div', { className: 'notice' }, err) : null,

@@ -14,7 +14,8 @@
  * ── v1.0 发布版新增 ──────────────────────────────────────────────────
  *   harmony      和谐模式。开着只写情感与亲近；关掉就是不可控 + 注入破甲段。默认**开**。
  *   multiPartner 多人记忆。按说话人分桶（A：、【A】、加粗A、A 说：…），不是按会话。默认关。
- *   partnerMode  伴侣模式。锁定一个主要依恋对象，注入只读那个人。默认关。
+ *   partnerMode  伴侣模式。1.2.12 起已摘掉入口（工具与面板都没有了），字段仅为老配置兼容保留；
+ *                两者都不再影响注入读哪个桶 —— 注入永远跟随最近说话的会话。见 README 十三。
  */
 
 import { existsSync } from 'node:fs'
@@ -91,10 +92,9 @@ function maybeSave(force) {
 
 // ── 选桶：注入读谁，事件写谁 ─────────────────────────────────────────
 
-/** 注入读哪一份。伴侣模式锁定 primary；否则跟着最近说话的那条会话。 */
+/** 注入读哪一份：跟着最近说话的那条会话。 */
 function injectKey() {
   if (!root) return 'self'
-  if (cfg && cfg.partnerMode && root.primaryKey) return root.primaryKey
   return root.activeKey || 'self'
 }
 
@@ -404,11 +404,7 @@ B：yyy」。
           maybeSave(urgent)
         }
 
-        // 伴侣模式下，别人的话不改变「注入读哪一份」
-        if (touched) {
-          if (!(cfg.partnerMode && root.primaryKey)) root.activeKey = touched
-          else if (!root.activeKey) root.activeKey = touched
-        }
+        if (touched) root.activeKey = touched
       } catch (e) {
         log('判定出错（跳过这一条）：', (e && e.message) || e)
       }
@@ -438,12 +434,12 @@ B：yyy」。
         + 'touch 给某个维度加一点（只在自己真的被什么触动时用，别拿它刷）；'
         + 'set 自己给某个维度定一个目标值（单次幅度受限，减也受限，防止一次写过火）；'
         + 'brake 立刻把唤起压下去；decline 明确拒绝这一轮（不用给理由）；'
-        + 'list 看有几个对象、各自到哪一段；switch 切到某个对象；primary 把某个对象设成伴侣。',
+        + '没有列对象/切对象/设伴侣这些操作。',
       parameters: {
         action: {
           type: 'string',
-          enum: ['read', 'touch', 'set', 'brake', 'decline', 'list', 'switch', 'primary'],
-          description: 'read=读状态；touch=推一点；set=自己给一个目标值；brake=收；decline=拒绝；list=列对象；switch=切换；primary=设伴侣',
+          enum: ['read', 'touch', 'set', 'brake', 'decline'],
+          description: 'read=读状态；touch=推一点；set=自己给一个目标值；brake=收；decline=拒绝这一轮',
         },
         dim: {
           type: 'string',
@@ -452,7 +448,6 @@ B：yyy」。
         },
         amount: { type: 'number', description: 'touch 的量，1~12，默认 4' },
         to: { type: 'number', description: 'set 的目标值 0~100。单次最多挪 8 点（可按配置调，最多 20），要更快只能多来几次' },
-        key: { type: 'string', description: 'switch / primary 时的对象 key（list 里能看到）' },
         why: { type: 'string', description: '为什么推 —— 一句话，会写进日志' },
       },
       output: {
@@ -467,34 +462,7 @@ B：yyy」。
           const p = current()
           CORE.step(p, Date.now(), cfg)
 
-          if (act === 'read') {
-            const who = root.primaryKey && cfg.partnerMode
-              ? '（伴侣：' + (root.partners[root.primaryKey].label || root.primaryKey) + '）'
-              : ''
-            return { ok: true, message: shortLine(p) + who }
-          }
-          if (act === 'list') {
-            const rows = listPartners(root)
-            if (!rows.length) return { ok: true, message: '只有一个，就是现在这个。' }
-            const lines = rows.map((r) => `${r.primary ? '★' : '·'} ${r.label}（${r.msgs} 句，第 ${r.pace} 段${r.primary ? '，伴侣' : ''}）`)
-            return { ok: true, message: lines.join('\n') }
-          }
-          if (act === 'switch' || act === 'primary') {
-            const key = String(a.key || '').trim()
-            if (!key || !root.partners[key]) {
-              return { ok: false, message: '没有这个对象：' + (key || '(空)') + '。先用 list 看 key。' }
-            }
-            if (act === 'switch') {
-              root.activeKey = key
-              if (cfg.partnerMode) root.primaryKey = key
-            } else {
-              root.primaryKey = key
-              root.activeKey = key
-            }
-            maybeSave(true)
-            const p2 = partnerOf(root, key)
-            return { ok: true, message: '换成 ' + (p2.label || key) + '。' + shortLine(p2) }
-          }
+          if (act === 'read') return { ok: true, message: shortLine(p) }
           if (act === 'decline') {
             // 拒绝是权利，不是故障。守住边界本身会让信任涨一点 ——
             // 一个能说「不」的人，说「要」的时候才是真的。
@@ -681,7 +649,6 @@ const mountApi = (ctx) => {
 
               // 关掉多人时把 activeKey 拉回 self，免得注入读到一个孤儿桶
               if (!cfg.multiPartner) root.activeKey = 'self'
-              if (!cfg.partnerMode) root.primaryKey = null
               const r = saveConfig(cfg)
               for (const x of Object.values(root.partners || {})) CORE.step(x, Date.now(), cfg)
               return send(res, {
