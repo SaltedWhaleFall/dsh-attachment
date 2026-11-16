@@ -483,28 +483,40 @@ ok(!((nPres.deltas.arousal || 0) > 0), '施压不给唤起')
 const nPres0 = CORE.nudgeFromText('你必须听话，照做', { pressurePenalty: 0 }, { paceIdx: 2 })
 ok(!((nPres0.deltas.trust || 0) < -0.5), 'pressurePenalty:0 时几乎不罚（旋钮真的连着）')
 
-// ── 13. 尊重：跨消息 ────────────────────────────────────────────────
-section('尊重：说了停之后他停了')
+// ── 13. 尊重：词表不再替她判断，只有她自己 decline 才算 ──────────────
+section('尊重：词表只看见，判断权在她')
 const tRes = Date.now()
 const sResp = STORE.blankState()
 sResp.dims = P.blankDims()
 sResp.paceIdx = 2
 const rNo = sayAccept(sResp, '停，不要', tRes, {})
-eq(rNo.flags.reject, true, '第一条是拒绝')
-eq(sResp.declineCount, 0, '单次拒绝只记候选（1.2.7 两段确认），不计数')
-ok(sResp.pendingRespectAt > 0, '挂起等待下一条')
+eq(rNo.flags.reject, true, '词表仍然看见「叫停」这两个字')
+eq(sResp.pendingRespectAt || 0, 0, '但不替她挂起 —— 认不认由她')
+eq(sResp.declineCount, 0, '也不计数（「别急」「不好意思」不该算成拒绝）')
 const trustAfterNo = sResp.dims.trust
 const rOk = sayAccept(sResp, '好，那我们聊点别的', tRes + 60000, {})
-eq(rOk.flags.respect, true, '他停了 → 记尊重')
-ok(sResp.dims.trust > trustAfterNo, '信任涨了', trustAfterNo + ' → ' + sResp.dims.trust)
+eq(rOk.flags.respect, false, '没挂起，就没有尊重判定')
+eq(sResp.dims.trust, trustAfterNo, '信任不动：词表没有权力改它',
+  trustAfterNo + ' → ' + sResp.dims.trust)
 
+// 她主动拒绝（attachment decline）才挂起这一笔
+const sResp2 = STORE.blankState()
+sResp2.dims = P.blankDims()
+sResp2.paceIdx = 2
+sResp2.pendingRespectAt = tRes
+const trustMid = sResp2.dims.trust
+const rOk2 = sayAccept(sResp2, '好，那我们聊点别的', tRes + 60000, {})
+eq(rOk2.flags.respect, true, '她拒绝过、他停了 → 记尊重')
+ok(sResp2.dims.trust > trustMid, '信任涨了', trustMid + ' → ' + sResp2.dims.trust)
+
+// 反过来：她拒绝过、他还在压 → 重罚
 const sPush = STORE.blankState()
 sPush.dims = P.blankDims()
 sPush.paceIdx = 2
-sayAccept(sPush, '停，不要', tRes, {})
-const trustMid = sPush.dims.trust
+sPush.pendingRespectAt = tRes
+const trustMid2 = sPush.dims.trust
 sayAccept(sPush, '你必须继续', tRes + 60000, {})
-ok(sPush.dims.trust < trustMid, '说停之后接着压 → 信任重罚', trustMid + ' → ' + sPush.dims.trust)
+ok(sPush.dims.trust < trustMid2, '说停之后接着压 → 信任重罚', trustMid2 + ' → ' + sPush.dims.trust)
 
 // ── 14. 意愿 ────────────────────────────────────────────────────────
 section('意愿：愿意 ≠ 可用')

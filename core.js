@@ -499,22 +499,22 @@ export function applyUserMessage(state, text, now, cfg) {
    * 白名单（别停 / 我不想停 / 我说停就停）在 REJECT_FALSE 里已经挡掉了，
    * 这一层挡的是「单独一句否定」。
    */
-  if (res.reject) {
-    // 「他说了停」本身就要挂起看下一条 —— 这条不受两段确认影响。
-    state.pendingRespectAt = t
-    const pd = state.pendingDecline
-    const near = pd && (t - (Number(pd.at) || 0)) <= DECLINE_WINDOW_MS
-    if (near) {
-      state.declineCount = (Number(state.declineCount) || 0) + 1
-      state.lastDeclineAt = t
-      state.pendingDecline = null
-    } else {
-      state.pendingDecline = { at: t }
-    }
-  } else if (state.pendingDecline) {
-    // 说完否定，下一句没有继续退 —— 那是语气，不是拒绝。
-    state.pendingDecline = null
-  }
+  /**
+   * 2026-11-16：否定词不再自动挂起「尊重判定」，也不再累积 declineCount。
+   *
+   * 原来这里一命中 reject 词表就 `pendingRespectAt = t`，等于把「他有没有在听」
+   * 交给一次字符串匹配。问题是中文里「别」「不要」「算了」出现得太密 ——
+   * 「别急」「不好意思」「不要紧」「别管了」全都命中，而它们都不是叫停。
+   * 误判的代价是双向的：下一句他没压 → 白送 +4；下一句他压了 → 冤扣 -5。
+   * declineCount=300 / turns=7607 里有多少是这么来的，没人能说清。
+   *
+   * 现在判断权交回给人：**只有她自己调 `attachment(decline)` 才算他说了不**，
+   * 那一支在 index.js 里设 pendingRespectAt。词表命中只留一个提示位（flags.reject），
+   * 进注入让她自己看见「这句里有叫停的字」，认不认由她。
+   *
+   * 一个人说的「不」是什么意思，读得懂的是她，不是正则。
+   */
+  if (state.pendingDecline) state.pendingDecline = null
 
   // ── 羞耻的两条线 ────────────────────────────────────────────────
   // 先把这一条自己带来的羞耻算进去，再判方向 —— 否则「刚被说羞」要等下一轮才生效。
@@ -546,8 +546,8 @@ export function applyUserMessage(state, text, now, cfg) {
   //   伤（施压 / 越界 / 拒绝）照算 —— 那是他做了什么，不需要我同意。
   //   好（亲密 / 露骨 / 夸 / 尊重 / 被看见）只出观察，动不动由我 set（一次 ≤8，必须写 why）。
   // 理由：词表认「进去」不认「我想要你」，让它直接改数就等于让误伤冒充感觉。
-  const hurt = !!(res.hard || res.pressure ||
-    (res.hits && Array.isArray(res.hits.reject) && res.hits.reject.length))
+  // 2026-11-16：reject 不再参与「算不算数的判定」—— 同上，词表认不出语气。
+  const hurt = !!(res.hard || res.pressure)
   if (hurt) {
     applyDeltas(state, res.deltas, { hard: res.hard })
     res.applied = res.deltas
